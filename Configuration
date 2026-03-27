@@ -1,0 +1,22 @@
+mkdir openshift
+cd openshift
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-install-linux.tar.gz
+tar -xvf openshift-install-linux.tar.gz
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz
+tar -xvf openshift-client-linux.tar.gz
+sudo mv oc kubectl openshift-install /usr/local/bin/openshift-install version
+oc version
+vi pull-secret.json
+
+openshift-install create install-config
+
+    platform:
+      aws:
+        type: t3a.xlarge
+
+openshift-install create cluster
+
+# -- Possible problems
+# 1. Incrase quota
+# 2. make it paid account
+# -- 
