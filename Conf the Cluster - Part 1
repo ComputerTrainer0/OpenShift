@@ -1,4 +1,142 @@
 Onbording Guide: https://docs.google.com/document/d/1C32Qzm_tjd-zw39zj_z8UcKJkcnmSflBV7qAySMPd6I/edit?usp=sharing
 
+# Start to understand cluster configuration:
+oc version
+oc login https://api.venky-ocp.beyondcloud.online:6443 -u <> -p ""
 
+#understanding nodes
 oc get nodes -o wide
+
+===========================================
+===========================================
+
+# First Hand's On
+
+#--- First Example ---
+#1. Login to your ns
+#2. Create deployment
+oc create deployment loan-app --image=nginx
+#3. Scale manually
+oc scale deployment loan-app --replicas=3
+#4. Add environment variable
+oc set env deployment/loan-app ENV=dev
+#5. Create configmap
+oc create configmap loan-config --from-literal=APP=loan
+#6. Create secret
+oc create secret generic loan-secret --from-literal=PASSWORD=123
+#7. Expose service
+oc expose deployment loan-app --port=80
+#8. Expose route
+oc expose svc loan-app
+
+
+#--- Second Example ---
+
+vi loan-app.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: loan-app
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loan-config
+  namespace: loan-app
+data:
+  APP_NAME: "Loan Portal"
+  ENV: "dev"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: loan-secret
+  namespace: loan-app
+type: Opaque
+stringData:
+  PASSWORD: "123"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loan-app
+  namespace: loan-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: loan-app
+  template:
+    metadata:
+      labels:
+        app: loan-app
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+        ports:
+        - containerPort: 80
+        env:
+        - name: ENV
+          valueFrom:
+            configMapKeyRef:
+              name: loan-config
+              key: ENV
+        - name: PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: loan-secret
+              key: PASSWORD
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loan-app
+  namespace: loan-app
+spec:
+  selector:
+    app: loan-app
+  ports:
+  - port: 80
+    targetPort: 80
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: loan-app
+  namespace: loan-app
+spec:
+  to:
+    kind: Service
+    name: loan-app
+  port:
+    targetPort: 80
+
+:wq
+
+#--EOF--
+
+#deploying the above yaml file
+oc apply -f loan-app.yaml
+
+#---Cleanup---
+
+oc delete route loan-app
+oc delete svc loan-app
+oc delete deployment loan-app
+oc delete configmap loan-config
+oc delete secret loan-secret
+
+---
+
+oc delete -f loan-app.yaml
+
+
+===========================================
+===========================================
+
+
+
+
+
