@@ -1,0 +1,43 @@
+🧩 Step 1 — Install htpasswd (on your EC2 machine)
+sudo yum install httpd-tools -y
+🧩 Step 2 — Create users file
+htpasswd -c -B users.htpasswd student1
+
+Enter password (simple for training)
+
+Add more users:
+
+htpasswd -B users.htpasswd student2
+htpasswd -B users.htpasswd student3
+...
+🧩 Step 3 — Create secret in OpenShift
+oc create secret generic htpasswd-secret \
+  --from-file=htpasswd=users.htpasswd \
+  -n openshift-config
+🧩 Step 4 — Configure OAuth
+oc edit oauth cluster
+
+Add this under spec:
+
+spec:
+  identityProviders:
+  - name: htpasswd_provider
+    mappingMethod: claim
+    type: HTPasswd
+    htpasswd:
+      fileData:
+        name: htpasswd-secret
+
+Save and exit.
+
+🧠 Wait ~1–2 minutes
+
+Now login screen will support your users
+
+🧩 Step 5 — Create project per student
+oc new-project student1
+oc new-project student2
+oc new-project student3
+🧩 Step 6 — Assign permissions
+oc policy add-role-to-user admin student1 -n student1
+oc policy add-role-to-user admin student2 -n student2
