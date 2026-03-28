@@ -17,6 +17,6 @@ openshift-install create install-config
 openshift-install create cluster
 
 # -- Possible problems
-# 1. Incrase quota
+# 1. Incrase quota of vcpu to 28 (AWS Console → Service Quotas → EC2 → Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances)
 # 2. make it paid account
 # -- 
