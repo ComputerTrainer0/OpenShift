@@ -20,3 +20,13 @@ openshift-install create cluster
 # 1. Incrase quota of vcpu to 28 (AWS Console → Service Quotas → EC2 → Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances)
 # 2. make it paid account
 # -- 
+
+
+export KUBECONFIG=/home/ec2-user/ocp-clean/auth/kubeconfig
+
+oc whoami
+oc get nodes
+oc get clusterversion
+oc get clusteroperators
+oc get machinesets -n openshift-machine-api
+
