@@ -140,7 +140,7 @@ parameters:
 - name: APP_NAME
   value: simple-nginx
 - name: IMAGE
-  value: nginxinc/nginx-unprivileged
+  value: quay.io/nginx/nginx-unprivileged
 - name: CONTAINER_PORT
   value: "8080"
 objects:
