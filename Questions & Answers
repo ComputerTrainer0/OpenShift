@@ -1,0 +1,75 @@
+# Additional Questions Answered
+
+Node selector
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-zone-f
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-zone-f
+  template:
+    metadata:
+      labels:
+        app: nginx-zone-f
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/zone: us-east-1f
+      containers:
+      - name: nginx
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+
+
+Affinity:
+
+spec:
+  template:
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: disktype
+                operator: In
+                values:
+                - ssd
+
+spec:
+  template:
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            preference:
+              matchExpressions:
+              - key: zone
+                operator: In
+                values:
+                - east
+
+
+# Anti Affinity
+
+spec:
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - myapp
+            topologyKey: kubernetes.io/hostname
