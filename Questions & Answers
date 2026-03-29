@@ -25,7 +25,7 @@ spec:
         - containerPort: 80
 
 
-Affinity:
+#Affinity:
 
 spec:
   template:
@@ -73,3 +73,22 @@ spec:
                 values:
                 - myapp
             topologyKey: kubernetes.io/hostname
+
+
+Node selector
+Pod chooses node by label.
+Simple and exact.
+
+Affinity / anti-affinity
+Pod expresses rules or preferences.
+More advanced and smarter.
+
+Taints / tolerations
+Node blocks pods unless they are allowed.
+Best for isolation and reservation.
+
+
+
+
+
+
