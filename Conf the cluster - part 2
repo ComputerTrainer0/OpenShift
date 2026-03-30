@@ -153,4 +153,12 @@ Check user permissions:
 oc auth can-i create pods --as=student1 -n myproject
 
 
+===
 
+oc auth can-i create pods --as=student1 -n myproject
+oc auth can-i --list --as=student1
+oc get clusterrolebinding |grep student1
+oc auth can-i '*' '*' --as=student1
+
+Getting all the cluster and role bindings:
+oc get clusterrolebinding,rolebinding -A -o wide |grep fahim
