@@ -1,0 +1,152 @@
+cd ~/old/ocp-clean/
+openshift-install destroy cluster --dir=. --log-level=info
+cat > install-config.yaml
+cat > install-config.yaml <<'EOF'
+apiVersion: v1
+baseDomain: beyondcloud.online
+metadata:
+  name: venky-ocp
+
+compute:
+- name: worker
+  replicas: 3
+  platform:
+    aws:
+      type: t3a.xlarge
+
+controlPlane:
+  name: master
+  replicas: 3
+  platform:
+    aws:
+      type: t3a.xlarge
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  serviceNetwork:
+  - 172.30.0.0/16
+  machineNetwork:
+  - cidr: 10.0.0.0/16
+
+platform:
+  aws:
+    region: us-east-1
+
+pullSecret: 'REPLACE_ME_WITH_FULL_PULL_SECRET_JSON'
+EOF
+
+===========
+ export KUBECONFIG=/home/ec2-user/old/ocp-clean/auth/kubeconfig
+oc scale machineset venky-ocp-gxccw-worker-us-east-1d   -n openshift-machine-api --replicas=0
+oc scale machineset venky-ocp-gxccw-worker-us-east-1d   -n openshift-machine-api --replicas=0
+
+===========
+create users:
+
+sudo dnf install -y httpd-tools
+mkdir -p ~/auth
+cd ~/auth
+rm -f htpasswd
+
+for i in $(seq 1 18); do
+  htpasswd -bB htpasswd student$i password
+done
+
+vi tpasswd-secret-and-oauth.yaml
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: htpass-secret
+  namespace: openshift-config
+type: Opaque
+data:
+  htpasswd: REPLACE_BASE64
+---
+apiVersion: config.openshift.io/v1
+kind: OAuth
+metadata:
+  name: cluster
+spec:
+  identityProviders:
+  - name: students
+    mappingMethod: claim
+    type: HTPasswd
+    htpasswd:
+      fileData:
+        name: htpass-secret
+
+EOF
+
+BASE64=$(base64 -w0 htpasswd)
+sed "s|REPLACE_BASE64|$BASE64|" htpasswd-secret-and-oauth.yaml > htpasswd-final.yaml
+
+
+oc apply -f htpasswd-final.yaml
+
+oc login -u student1 -p password https://api.<your-cluster-domain>:6443
+export KUBECONFIG=/home/ec2-user/old/ocp-clean/auth/kubeconfig
+oc login https://api.venky-ocp.beyondcloud.online:6443 -u kubeadmin -p "Z6yyw-6BG3Q-ehZJB-aIYsP"
+
+
+vi create-students-namespaces.sh
+#!/bin/bash
+set -e
+
+STUDENT_COUNT=18
+
+for i in $(seq 1 $STUDENT_COUNT); do
+  USER="student$i"
+  NS="student-n$i"
+
+  echo "Creating project ${NS}..."
+  oc new-project "${NS}" >/dev/null 2>&1 || echo "Project ${NS} already exists"
+
+  echo "Granting admin to ${USER} on ${NS}..."
+  oc policy add-role-to-user admin "${USER}" -n "${NS}"
+
+  echo "Done: ${USER} -> ${NS}"
+  echo "----------------------------------"
+done
+
+EOF
+
+====
+
+#Script to add only one new student later
+
+htpasswd -bB ~/auth/htpasswd student19 password
+BASE64=$(base64 -w0 ~/auth/htpasswd)
+
+cat > ~/auth/htpasswd-update.yaml <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: htpass-secret
+  namespace: openshift-config
+type: Opaque
+data:
+  htpasswd: ${BASE64}
+EOF
+
+oc apply -f ~/auth/htpasswd-update.yaml
+oc new-project student-n19
+oc policy add-role-to-user admin student19 -n student-n19
+
+EOF
+
+== Authorisation
+
+ oc get oauth cluster -o yaml
+for i in $(seq 1 18); do   oc policy add-role-to-user admin student$i -n student-n$i; done
+oc get rolebinding -n student-n1
+oc describe rolebinding admin-0 -n student-n1
+oc delete rolebinding admin-0 -n student-n1
+oc get rolebinding -n student-n5
+
+===
+
+
