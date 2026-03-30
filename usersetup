@@ -1,0 +1,19 @@
+yum install httpd-tools -y   # RHEL/CentOS
+# or
+apt install apache2-utils -y # Ubuntu
+htpasswd -b htpasswd student18 password
+oc create secret generic htpasswd-secret --from-file=htpasswd -n openshift-config  --dry-run=client -o yaml | oc apply -f -
+oc policy add-role-to-user admin student18 -n student18
+for i in {1..18}
+do
+  oc adm policy add-cluster-role-to-user cluster-admin student$i
+done
+for i in {1..18}
+do
+  oc adm policy remove-cluster-role-to-user cluster-admin student$i
+done
+for i in {1..18}
+do
+  oc adm policy add-role-to-user admin student$i -n student$i
+done
+oc adm policy remove-cluster-role-from-user cluster-admin student18
