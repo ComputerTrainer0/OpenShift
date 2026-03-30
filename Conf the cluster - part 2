@@ -3,7 +3,7 @@
 
 
 Local Auth:
-
+oc get secret htpass-secret -n openshift-config -o jsonpath={.data.htpasswd} | base64 -d > htpasswd
 htpasswd -b htpasswd student18 password
 oc create secret generic htpasswd-secret --from-file=<FILENAME> -n openshift-config  --dry-run=client -o yaml | oc apply -f -
 oc policy add-role-to-user admin student18 -n student18
