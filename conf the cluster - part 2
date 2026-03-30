@@ -1,0 +1,75 @@
+
+
+
+
+Local Auth:
+
+htpasswd -b htpasswd student18 password
+oc create secret generic htpasswd-secret --from-file=<FILENAME> -n openshift-config  --dry-run=client -o yaml | oc apply -f -
+oc policy add-role-to-user admin student18 -n student18
+oc adm policy add-cluster-role-from-user admin student1
+oc adm policy add-cluster-role-from-user cluster-admin student1
+oc adm policy remove-cluster-role-from-user cluster-admin student1
+
+vi localuser.yaml
+
+apiVersion: config.openshift.io/v1
+kind: OAuth
+metadata:
+  name: cluster
+spec:
+  identityProviders:
+  - name: localusers
+    mappingMethod: claim
+    type: HTPasswd
+    htpasswd:
+      fileData:
+        name: htpasswd-secret
+
+--EOF--
+
+oc get users
+oc get identities
+oc edit oauth cluster
+oc get pods -n openshift-authentication
+
+
+
+In GitHub:
+Settings → Developer settings → OAuth Apps → New OAuth App. GitHub requires an Application name, Homepage URL, and Authorization callback URL
+
+Use values like this:
+
+Application name: OpenShift GitHub Login
+Homepage URL:
+https://oauth-openshift.apps.venky-ocp.beyondcloud.online
+Authorization callback URL:
+https://oauth-openshift.apps.venky-ocp.beyondcloud.online/oauth2callback/github
+
+
+Dont forget to copy the secret.
+
+oc create secret generic github-secret \
+  --from-literal=clientSecret=YOUR_GITHUB_CLIENT_SECRET \
+  -n openshift-config
+
+  vi github-idp.yaml
+
+apiVersion: config.openshift.io/v1
+kind: OAuth
+metadata:
+  name: cluster
+spec:
+  identityProviders:
+  - name: github
+    mappingMethod: claim
+    type: GitHub
+    github:
+      clientID: YOUR_GITHUB_CLIENT_ID
+      clientSecret:
+        name: github-secret
+      organizations:
+      - oc-students-demo
+
+
+
