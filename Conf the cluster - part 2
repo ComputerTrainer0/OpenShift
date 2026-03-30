@@ -1,8 +1,9 @@
 
 
-
+Authentication:
 
 Local Auth:
+
 oc get secret htpass-secret -n openshift-config -o jsonpath={.data.htpasswd} | base64 -d > htpasswd
 htpasswd -b htpasswd student18 password
 oc create secret generic htpasswd-secret --from-file=<FILENAME> -n openshift-config  --dry-run=client -o yaml | oc apply -f -
@@ -34,6 +35,7 @@ oc edit oauth cluster
 oc get pods -n openshift-authentication
 
 
+GITHUB:
 
 In GitHub:
 Settings → Developer settings → OAuth Apps → New OAuth App. GitHub requires an Application name, Homepage URL, and Authorization callback URL
@@ -70,6 +72,85 @@ spec:
         name: github-secret
       organizations:
       - oc-students-demo
+
+
+
+
+RBAC:
+
+Assign view (read-only)
+oc adm policy add-role-to-user view user1 -n myproject
+
+Assign edit (developer)
+oc adm policy add-role-to-user edit student1 -n myproject
+
+Assign admin (project admin)
+oc adm policy add-role-to-user admin lead1 -n myproject
+
+Assign cluster-admin (full access)
+oc adm policy add-cluster-role-to-user cluster-admin venky
+
+⚠️ Use carefully — full control
+
+2. Create Custom Role (Fine-Grained Access)
+
+Example: Only allow POD read access
+
+--
+Step 1: Create Role
+cat <<EOF | oc apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: myproject
+  name: pod-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+EOF
+
+Step 2: Bind Role to User
+oc create rolebinding pod-reader-binding \
+  --role=pod-reader \
+  --user=student2 \
+  -n myproject
+
+--
+
+🌍 3. Create Cluster-Level Custom Role
+
+Example: Read nodes (cluster-wide)
+
+--
+cat <<EOF | oc apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: node-reader
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list"]
+EOF
+
+Bind Cluster Role
+oc create clusterrolebinding node-reader-binding \
+  --clusterrole=node-reader \
+  --user=student3
+--
+
+4. Remove Roles
+Remove project role:
+oc adm policy remove-role-from-user edit student1 -n myproject
+Remove cluster role:
+oc adm policy remove-cluster-role-from-user cluster-admin student1
+
+5. Verify Access
+Check roles in project:
+oc get rolebindings -n myproject
+Check user permissions:
+oc auth can-i create pods --as=student1 -n myproject
 
 
 
