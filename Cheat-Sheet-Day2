@@ -1,0 +1,41 @@
+---
+🔹 Login as User
+oc login -u student1 -p password
+oc whoami
+
+🔹 Switch Project
+oc project student1
+
+🔹 Check Permissions
+oc auth can-i create pods
+oc auth can-i get pods
+
+🔹 Test Access
+oc get pods
+oc create deployment test --image=nginx
+
+🔹 Create Users (HTPasswd)
+htpasswd -c -B -b users.htpasswd student1 password
+htpasswd -b users.htpasswd student2 password
+
+🔹 Create Secret
+oc create secret generic htpasswd-secret \
+  --from-file=htpasswd=users.htpasswd \
+  -n openshift-config
+
+🔹 Configure OAuth
+oc edit oauth cluster
+
+(Add HTPasswd identity provider)
+
+🔹 Assign Roles
+oc policy add-role-to-user admin student1 -n student1
+oc policy add-role-to-user view student2 -n student1
+
+🔹 Remove Roles
+oc policy remove-role-from-user admin student1 -n student1
+
+🔹 Cluster Role
+oc adm policy add-cluster-role-to-user view student3
+
+---
