@@ -1,0 +1,42 @@
+-----
+  
+🔹 Login & Project
+oc login https://api.<cluster-domain>:6443
+oc project studentX
+oc whoami
+
+🔹 Deploy Application (Imperative)
+oc create deployment loan-app --image=nginxinc/nginx-unprivileged
+
+  🔹 Scale Application
+oc scale deployment loan-app --replicas=3
+
+  🔹 Expose Application
+oc expose deployment loan-app --port=8080 --target-port=8080
+oc expose svc loan-app
+
+  🔹 Check Resources
+oc get pods
+oc get svc
+oc get route
+oc get all
+
+🔹 View Logs & Debug
+oc logs <pod-name>
+oc describe pod <pod-name>
+
+🔹 Declarative Deployment
+oc apply -f app.yaml
+oc delete -f app.yaml
+
+🔹 ConfigMap & Secret
+oc create configmap app-config --from-literal=ENV=dev
+oc create secret generic app-secret --from-literal=PASSWORD=123
+
+  🔹 Cleanup (IMPORTANT)
+oc delete all --all
+oc delete configmap --all
+oc delete secret --all
+
+
+-----
