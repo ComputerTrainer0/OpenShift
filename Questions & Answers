@@ -20,13 +20,13 @@ spec:
         topology.kubernetes.io/zone: us-east-1f
       containers:
       - name: nginx
-        image: nginx:latest
+        image: 35.153.133.45:5000/nginx
         ports:
         - containerPort: 80
 
 
 #Affinity:
-
+#NON USABLE EXAMPLE
 spec:
   template:
     spec:
@@ -54,6 +54,144 @@ spec:
                 values:
                 - east
 
+
+#USABLE EXAMPLE:
+
+Real working example using the exact hostname label
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: host-demo
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - ip-10-0-65-134.ec2.internal
+  containers:
+  - name: nginx
+    image: 35.153.133.45:5000/nginx
+
+
+--
+
+Real working example: prefer us-east-1c, but allow others
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zone-preferred-demo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: zone-preferred-demo
+  template:
+    metadata:
+      labels:
+        app: zone-preferred-demo
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-1c
+      containers:
+      - name: nginx
+        image: 35.153.133.45:5000/nginx
+
+---
+
+this Deployment will schedule only onto nodes in zone us-east-1c:
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zone-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: zone-demo
+  template:
+    metadata:
+      labels:
+        app: zone-demo
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-1c
+      containers:
+      - name: nginx
+        image: registry.k8s.io/nginx-slim:0.24
+        ports:
+        - containerPort: 80
+
+---
+
+If you have 3 zones and want “run in any of them”
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multi-zone-demo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: multi-zone-demo
+  template:
+    metadata:
+      labels:
+        app: multi-zone-demo
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-1a
+                - us-east-1b
+                - us-east-1c
+      containers:
+      - name: nginx
+        image: registry.k8s.io/nginx-slim:0.24
+
+---
+
+
+This is priority strength (1–100)
+Weight defines priority; higher weight = more preferred
+Each matching rule adds weight
+Node with highest total weight wins
+
+| Node  | Matches rule? | Weight |
+| ----- | ------------- | ------ |
+| node1 | yes           | 100    |
+| node2 | yes           | 50     |
+| node3 | no            | 0      |
+
+
+More Info: https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/operator_apis/config-imageregistry-operator-openshift-io-v1
 
 # Anti Affinity
 
