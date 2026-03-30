@@ -1,0 +1,188 @@
+1) Temporary change on a worker node
+
+First pick a worker:
+
+oc get nodes
+
+Open a debug shell on the worker:
+
+oc debug node/<worker-node-name>
+chroot /host
+
+Examples inside the host:
+
+hostnamectl
+lsblk
+systemctl status kubelet
+cat /etc/containers/registries.conf
+touch /root/test-file
+
+Exit when done:
+
+exit
+exit
+
+That is fine for inspection or one-off troubleshooting, but changes made this way are not the right long-term method for RHCOS nodes. Use MachineConfig for persistent node changes.
+
+2) Temporary change on a master node
+
+Same idea, but be extra careful:
+
+oc debug node/<master-node-name>
+chroot /host
+
+Examples:
+
+hostnamectl
+systemctl status kubelet
+crictl ps
+journalctl -u kubelet -n 50
+
+Do not make ad-hoc permanent edits on masters. Control plane nodes should be changed through supported APIs such as MachineConfig or other operator-managed objects.
+
+3) Persistent change on worker nodes with MachineConfig
+
+Example: create a file on all workers.
+
+cat <<'EOF' > 99-worker-custom-file.yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 99-worker-custom-file
+  labels:
+    machineconfiguration.openshift.io/role: worker
+spec:
+  config:
+    ignition:
+      version: 3.4.0
+    storage:
+      files:
+      - path: /etc/myworker-note
+        mode: 0644
+        overwrite: true
+        contents:
+          source: data:text/plain;charset=utf-8;base64,V29ya2VyIG5vZGUgY3VzdG9tIGZpbGUK
+EOF
+
+oc apply -f 99-worker-custom-file.yaml
+
+Check rollout:
+
+oc get machineconfigpool worker
+oc get machineconfig | grep worker-custom-file
+
+Verify on a worker:
+
+oc debug node/<worker-node-name>
+chroot /host
+cat /etc/myworker-note
+
+MachineConfig is the standard supported path for OS-level node configuration.
+
+4) Persistent change on master nodes with MachineConfig
+
+Same thing, but target the master pool:
+
+cat <<'EOF' > 99-master-custom-file.yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 99-master-custom-file
+  labels:
+    machineconfiguration.openshift.io/role: master
+spec:
+  config:
+    ignition:
+      version: 3.4.0
+    storage:
+      files:
+      - path: /etc/mymaster-note
+        mode: 0644
+        overwrite: true
+        contents:
+          source: data:text/plain;charset=utf-8;base64,TWFzdGVyIG5vZGUgY3VzdG9tIGZpbGUK
+EOF
+
+oc apply -f 99-master-custom-file.yaml
+
+Check rollout:
+
+oc get machineconfigpool master
+oc describe mcp master
+
+Verify:
+
+oc debug node/<master-node-name>
+chroot /host
+cat /etc/mymaster-note
+5) Operator-style change: modify kubelet settings on workers
+
+For kubelet-related settings, use the supported API instead of editing files by hand. OpenShift documents node customization through KubeletConfig as part of machine configuration.
+
+Example: set maxPods for workers.
+
+cat <<'EOF' > worker-kubeletconfig.yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: set-max-pods
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+  kubeletConfig:
+    maxPods: 250
+EOF
+
+oc apply -f worker-kubeletconfig.yaml
+
+Check:
+
+oc get kubeletconfig
+oc get mcp worker
+6) Operator-style change: modify CRI-O/container runtime on workers
+
+For container runtime settings, use ContainerRuntimeConfig, which is also part of supported machine configuration workflows.
+
+Example:
+
+cat <<'EOF' > worker-crio.yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  name: worker-crio-config
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+  containerRuntimeConfig:
+    logLevel: debug
+EOF
+
+oc apply -f worker-crio.yaml
+
+Check:
+
+oc get containerruntimeconfig
+oc get mcp worker
+7) Useful rollback commands
+
+Delete the change:
+
+oc delete -f 99-worker-custom-file.yaml
+oc delete -f 99-master-custom-file.yaml
+oc delete -f worker-kubeletconfig.yaml
+oc delete -f worker-crio.yaml
+
+Watch pools return to updated state:
+
+oc get mcp
+watch oc get mcp
+Best practice summary
+Need to inspect a node now:
+oc debug node/<node> && chroot /host
+Need to persist OS/file/systemd/kernel-style changes:
+MachineConfig
+Need kubelet/runtime tuning:
+KubeletConfig / ContainerRuntimeConfig
+Avoid manual SSH edits as the normal method, especially on masters. Supported config should flow through the MCO / operator APIs.
