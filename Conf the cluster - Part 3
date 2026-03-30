@@ -17,5 +17,127 @@ oc patch ingresscontroller.operator default   -n openshift-ingress-operator   --
 oc get pods -n openshift-ingress
 
 
-SSL configuration on pods:
+Lab 1: TLS Route (External Traffic)
+oc new-project tls-demo
 
+oc create deployment nginx --image=nginx
+oc expose deployment nginx --port=80
+
+oc expose svc nginx --hostname=nginx.apps.<your-domain>
+
+Edit route:
+
+oc edit route nginx
+
+Add:
+
+tls:
+  termination: edge
+
+
+Lab 2: Network Policy – Deny All
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+oc apply -f deny-all.yaml
+
+
+
+Lab 3: Allow Specific Pod Traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-nginx
+spec:
+  podSelector:
+    matchLabels:
+      app: nginx
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          access: allowed
+oc apply -f allow.yaml
+
+
+
+Lab 4: Expose TCP App (LoadBalancer)
+apiVersion: v1
+kind: Service
+metadata:
+  name: tcp-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: nginx
+  ports:
+  - port: 80
+    targetPort: 80
+oc apply -f svc.yaml
+oc get svc
+
+
+Lab 5: NodePort Access
+oc expose deployment nginx --type=NodePort --port=80
+oc get svc
+
+Access:
+
+<NodeIP>:NodePort
+
+
+Lab 6: Resource Quota
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: quota
+spec:
+  hard:
+    pods: "5"
+    requests.cpu: "2"
+    requests.memory: 2Gi
+oc apply -f quota.yaml
+oc describe quota
+
+
+Lab 7: Limit Range
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: limits
+spec:
+  limits:
+  - default:
+      cpu: 500m
+      memory: 512Mi
+oc apply -f limit.yaml
+
+
+Lab 8: Disable Self-Provisioning
+oc get clusterrolebinding self-provisioners
+oc adm policy remove-cluster-role-from-group self-provisioner system:authenticated:oauth
+
+
+FINAL COMBINED LAB
+oc new-project final-lab
+
+# Apply quota
+oc apply -f quota.yaml
+
+# Apply limit range
+oc apply -f limit.yaml
+
+# Deploy app
+oc create deployment nginx --image=nginx
+oc expose deployment nginx --port=80
+
+# Expose service
+oc expose svc nginx
+
+# Apply network policy
+oc apply -f deny-all.yaml
