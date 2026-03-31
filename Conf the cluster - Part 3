@@ -355,7 +355,8 @@ metadata:
   name: limits
 spec:
   limits:
-  - default:
+  - type: Container
+    default:
       cpu: 500m
       memory: 512Mi
 oc apply -f limit.yaml
