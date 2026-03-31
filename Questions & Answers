@@ -226,7 +226,167 @@ Node blocks pods unless they are allowed.
 Best for isolation and reservation.
 
 
+====================
 
+Taints and Tolerations
+
+===
+LAB 1 — TAINTS & TOLERATIONS (Hands-on)
+
+Goal
+Control where pods are scheduled.
+
+Step 1: Check your nodes
+oc get nodes --show-labels
+
+Step 2: Add a taint to a node
+
+Pick one worker node (example):
+oc adm taint nodes ip-10-0-65-134.ec2.internal key=infra:NoSchedule
+
+Meaning:
+No pod can schedule here
+Unless it has matching toleration
+
+Verify taint
+oc describe node ip-10-0-65-134.ec2.internal | grep Taints
+
+Step 3: Create a pod WITHOUT toleration
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-no-toleration
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+oc apply -f pod.yaml
+
+Result:
+oc get pod
+
+Status: Pending
+
+Reason:
+oc describe pod test-no-toleration
+
+You’ll see:
+node(s) had taint {key=infra: NoSchedule}
+
+Step 4: Add toleration (FIX)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-with-toleration
+spec:
+  tolerations:
+  - key: "infra"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+  containers:
+  - name: nginx
+    image: nginx
+oc apply -f pod.yaml
+
+
+Concept	Meaning
+Taint	Node says “don’t come here”
+Toleration	Pod says “I can handle it”
+
+===
+
+LAB 2 — INFRA NODE (VERY IMPORTANT in OpenShift)
+
+What is Infra Node?
+
+Dedicated node for:
+
+Router pods (ingress)
+Registry
+Monitoring
+Logging
+
+Keeps app workloads separate
+
+Step 1: Label node as infra
+oc label node ip-10-0-65-134.ec2.internal node-role.kubernetes.io/infra=""
+
+Step 2: Add taint (IMPORTANT)
+oc adm taint nodes ip-10-0-65-134.ec2.internal node-role.kubernetes.io/infra=true:NoSchedule
+
+Step 3: Move router to infra node
+oc patch ingresscontroller.operator default \
+  -n openshift-ingress-operator \
+  --type=merge \
+  -p '{
+    "spec": {
+      "nodePlacement": {
+        "nodeSelector": {
+          "matchLabels": {
+            "node-role.kubernetes.io/infra": ""
+          }
+        },
+        "tolerations": [
+          {
+            "key": "node-role.kubernetes.io/infra",
+            "operator": "Exists",
+            "effect": "NoSchedule"
+          }
+        ]
+      }
+    }
+  }'
+
+Verify
+oc get pods -n openshift-ingress -o wide
+
+Router pods should move to infra node ✅
+
+Node Type	Purpose
+Worker	Application pods
+Infra	Platform services
+Master	Control plane
+
+===
+
+LAB 3 — DISABLING A NODE
+
+Scenario:
+Maintenance / issue / upgrade
+
+Step 1: Cordon node (disable scheduling)
+oc adm cordon ip-10-0-65-134.ec2.internal
+
+Node still running pods
+But no new pods
+
+Step 2: Drain node (evacuate pods)
+oc adm drain ip-10-0-65-134.ec2.internal --ignore-daemonsets --delete-emptydir-data
+
+Moves pods to other nodes
+
+Verify
+oc get pods -o wide
+
+Step 3: Uncordon (enable back)
+oc adm uncordon ip-10-0-65-134.ec2.internal
+
+===
+
+Important Notes (REAL WORLD)
+Action	Impact
+cordon	safe
+drain	disruptive
+taint	permanent control
+
+Difference:
+
+Feature	Use
+Node Selector	Simple placement
+Affinity	Advanced rules
+Taint	Block scheduling
+Toleration	Allow exception
 
 
 
