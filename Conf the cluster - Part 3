@@ -123,16 +123,12 @@ click frontend
 click route URL
 Step 7: Explain edge termination clearly
 
-Use this in class:
-
 Browser --HTTPS--> OpenShift Router --HTTP--> Frontend Pod
 
 So:
 
 external traffic is encrypted
 internal traffic from router to pod is not encrypted in edge mode
-
-That is the key teaching point.
 
 Step 8: Test internal communication before policies
 
@@ -223,7 +219,7 @@ spec:
   - from:
     - podSelector:
         matchLabels:
-          app: frontend
+          deployment: frontend
   policyTypes:
   - Ingress
 
@@ -251,12 +247,12 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: database
+      deployment: database
   ingress:
   - from:
     - podSelector:
         matchLabels:
-          app: backend
+          deployment: backend
   policyTypes:
   - Ingress
 
@@ -276,6 +272,8 @@ Frontend ---------> Backend
 Backend ----------> Database
 Frontend -X-> Database
 Other traffic blocked
+
+
 Step 15: Different ways to demonstrate each step
 External browsing
 oc get route
@@ -290,6 +288,7 @@ oc rsh deploy/frontend
 curl backend
 curl database
 exit
+
 Temporary curl pod
 oc run tester --image=curlimages/curl -it --rm -- sh
 
@@ -299,6 +298,8 @@ curl backend
 curl database
 exit
 Policy inspection
+
+
 oc get netpol
 oc describe netpol deny-all-ingress
 oc describe netpol allow-to-frontend
