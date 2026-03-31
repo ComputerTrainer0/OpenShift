@@ -295,6 +295,11 @@ Concept	Meaning
 Taint	Node says “don’t come here”
 Toleration	Pod says “I can handle it”
 
+Remove taints
+oc adm taint nodes ip-10-0-17-110.ec2.internal key-
+
+
+
 ===
 
 LAB 2 — INFRA NODE (VERY IMPORTANT in OpenShift)
@@ -390,4 +395,7 @@ Taint	Block scheduling
 Toleration	Allow exception
 
 
+PVC PV - stroage
+
+LDAP 
 
