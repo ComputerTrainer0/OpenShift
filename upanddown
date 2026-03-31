@@ -58,7 +58,7 @@ for i in $(seq 1 18); do
   htpasswd -bB htpasswd student$i password
 done
 
-vi tpasswd-secret-and-oauth.yaml
+vi htpasswd-secret-and-oauth.yaml
 
 apiVersion: v1
 kind: Secret
