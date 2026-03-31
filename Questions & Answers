@@ -280,13 +280,14 @@ metadata:
   name: test-with-toleration
 spec:
   tolerations:
-  - key: "infra"
+  - key: "key"
     operator: "Equal"
-    value: "true"
+    value: "infra"
     effect: "NoSchedule"
   containers:
   - name: nginx
     image: nginx
+
 oc apply -f pod.yaml
 
 
