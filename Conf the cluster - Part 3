@@ -58,9 +58,9 @@ Verify
 oc project
 oc get all
 Step 2: Deploy apps
-oc new-app --docker-image=35.153.133.45:5000/nginx:latest --name=frontend
-oc new-app --docker-image=35.153.133.45:5000/nginx:latest --name=backend
-oc new-app --docker-image=35.153.133.45:5000/nginx:latest --name=database
+oc new-app --docker-image=35.153.133.45:5000/nginx-unprivileged --name=frontend
+oc new-app --docker-image=35.153.133.45:5000/nginx-unprivileged --name=backend
+oc new-app --docker-image=35.153.133.45:5000/nginx-unprivileged --name=database
 
 Verify
 oc get pods
