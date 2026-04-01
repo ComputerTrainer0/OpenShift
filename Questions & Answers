@@ -395,7 +395,265 @@ Taint	Block scheduling
 Toleration	Allow exception
 
 
-PVC PV - stroage
+===========================
 
-LDAP 
+#Day 4 - NFS PVC PV
+
+Create NFS Server (on EC2 / VM)
+
+Run this on a Linux machine (your jump server or separate EC2)
+
+Step 1: Install NFS
+sudo yum install -y nfs-utils
+
+Step 2: Create shared directory
+sudo mkdir -p /nfs-share
+sudo chmod 777 /nfs-share
+
+Step 3: Configure export
+sudo vi /etc/exports
+
+Add:
+
+/nfs-share *(rw,sync,no_root_squash,no_subtree_check)
+
+Step 4: Start NFS service
+sudo systemctl enable --now nfs-server
+
+Step 5: Allow firewall (if needed)
+sudo systemctl stop firewalld
+
+Step 6: Verify
+showmount -e
+
+Output should show:
+/nfs-share *
+
+PART 2 — Create Persistent Volume (PV)
+
+Replace <NFS_SERVER_IP> with your EC2 private IP
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  nfs:
+    path: /nfs-share
+    server: <NFS_SERVER_IP>
+  persistentVolumeReclaimPolicy: Retain
+oc apply -f pv.yaml
+
+PART 3 — Create Persistent Volume Claim (PVC)
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+oc apply -f pvc.yaml
+
+Verify binding
+oc get pv
+oc get pvc
+
+STATUS should be:
+Bound
+
+PART 4 — Use PVC in Pod
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nfs-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    volumeMounts:
+    - mountPath: /usr/share/nginx/html
+      name: nfs-storage
+  volumes:
+  - name: nfs-storage
+    persistentVolumeClaim:
+      claimName: nfs-pvc
+oc apply -f pod.yaml
+
+PART 5 — Test Persistence
+
+Step 1: Write data
+oc exec -it nfs-pod -- bash
+echo "Hello from NFS" > /usr/share/nginx/html/index.html
+exit
+
+Step 2: Expose service
+oc expose pod nfs-pod --port=80
+oc expose svc nfs-pod
+
+Open route → should show:
+Hello from NFS
+
+Step 3: Delete pod
+oc delete pod nfs-pod
+
+Recreate:
+
+oc apply -f pod.yaml
+
+Step 4: Verify again
+Data still exists
+
+
+=================================
+
+Multi-Cluster
+
+Show workload placement like multi-cluster (even with 1 cluster)
+
+
+CLI Step 1: Label nodes
+oc get nodes
+oc label node <worker-node> env=cluster1
+CLI Step 2: Create app with placement
+oc new-project student-n1
+oc create deployment loan-app --image=nginx
+oc patch deployment loan-app -p '{
+"spec": {
+  "template": {
+    "spec": {
+      "nodeSelector": {
+        "env": "cluster1"
+      }
+    }
+  }
+}}'
+
+Verify (CLI)
+oc get pods -o wide
+
+Pod should land on that node
+
+Console Demo
+Workloads → Pods
+Click pod → see Node Name
+Teaching Point
+
+“This is how multi-cluster placement works (RHACM does same at scale)”
+
+
+===============================================================
+
+LAB 2 — Observability (Metrics + Logs)
+
+
+See real CPU + logs
+
+CLI Step 1: Generate load
+oc run loadgen --image=busybox -it --rm -- /bin/sh
+
+Inside:
+while true; do wget -q -O- http://loan-app; done
+
+CLI Step 2: Check CPU
+oc adm top pods
+
+CLI Step 3: Logs
+oc logs -f <pod-name>
+Console Demo (VERY IMPORTANT)
+
+Go to:
+
+observe → Metrics
+Observe → Dashboards
+
+Show:
+
+Pod CPU usage
+Namespace metrics
+Teaching Point
+
+“This is built-in Prometheus + Grafana in OpenShift”
+
+
+=======================
+
+
+Security recommandation
+
+1. Identity & Access Management (IAM)
+Recommendations
+Enforce SSO integration (LDAP / Azure AD / IAM Identity Center)
+Use RBAC with least privilege
+Avoid giving cluster-admin to users
+Use groups instead of individual users
+Example
+oc adm policy add-role-to-user admin student1 -n student-n1
+
+Separate roles:
+Dev → namespace access
+Ops → cluster access
+Security → read-only audit
+
+
+2. Network Security
+Recommendations
+Apply default deny network policies
+Allow only required traffic (micro-segmentation)
+Use namespace isolation
+Example (deny all)
+kind: NetworkPolicy
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+
+
+3. Container & Image Security
+Recommendations
+Use trusted/private registries
+Enable image scanning
+Avoid latest tag
+Use minimal base images (alpine, distroless)
+Example
+image: nginx:1.25
+
+
+4. Pod Security (Runtime Security)
+Recommendations
+Run containers as non-root
+Drop unnecessary Linux capabilities
+Use read-only root filesystem
+Example
+securityContext:
+  runAsNonRoot: true
+
+
+5. Data & Storage Security
+Recommendations
+Encrypt data at rest
+Encrypt traffic in transit (TLS)
+Restrict PVC access
+Avoid shared volumes unless required
+
+
+6. Secrets Management
+Recommendations
+Never store secrets in plain YAML
+Use:
+Kubernetes Secrets
+External vaults (HashiCorp Vault, AWS Secrets Manager)
+Example
+oc create secret generic db-secret --from-literal=password=admin123
+
+
+
 
