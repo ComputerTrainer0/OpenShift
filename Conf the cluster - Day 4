@@ -565,7 +565,7 @@ Objective
 Allow a pod to query the Kubernetes API using a service account and RBAC.
 
 Step 1: Create a project
-oc new-project api-access-demo
+oc new-project api-access-demo-student1-18
 
 Step 2: Create a service account
 oc create serviceaccount api-reader
@@ -588,13 +588,24 @@ oc apply -f role.yaml
 Step 4: Bind the role to the service account
 oc create rolebinding api-reader-binding \
   --role=pod-reader \
-  --serviceaccount=api-access-demo:api-reader
+  --serviceaccount=api-access-demo-student<1-18>:api-reader
 
 Step 5: Run a pod using that service account
-oc run api-test \
-  --image=registry.access.redhat.com/ubi9/ubi-minimal \
-  --serviceaccount=api-reader \
-  --command -- sleep 3600
+vi api-test.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: api-test
+spec:
+  serviceAccountName: api-reader
+  containers:
+  - name: test
+    image: registry.access.redhat.com/ubi9/ubi-minimal
+    command: ["sleep", "3600"]
+
+Apply the File:
+oc apply -f api-test.yaml
 
 Step 6: Open a shell
 oc rsh pod/api-test
