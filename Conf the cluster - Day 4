@@ -3,6 +3,7 @@ Hands On - Service Load Balancer:
 oc run nginx-lb --image=35.153.133.45:5000/nginx  --restart=Never --port=80
 oc get pod nginx-lb
 oc expose pod nginx-lb --port=80 --type=LoadBalancer
+oc expose pod nginx-lb --port=80 --target-port=8080 --type=LoadBalancer
 oc get svc nginx-lb -w
 #Wait for 5 mins before testing the URL
 curl http://a851183949fbf4cb9b642031b289d3ca-1283609437.us-east-1.elb.amazonaws.com
