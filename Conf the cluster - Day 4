@@ -198,15 +198,15 @@ Test with a student user
 
 #delete oc adm policy remove-cluster-role-from-group self-provisioner system:authenticated:oauth
 
-Try Creating NS named demo-student-n1
+Try Creating NS named demo-student-n1 - oc create ns demp-student-n1-18
 
 #Create a group
 oc adm policy add-cluster-role-to-group self-provisioner system:authenticated:oauth
 oc adm policy add-cluster-role-to-user self-provisioner student1
 
 
-oc get clusterrolebinding self-provisioners -o yaml
-oc patch clusterrolebinding self-provisioners   -p '{"subjects": null}'
+oc get clusterrolebinding self-provisioner -o yaml
+oc patch clusterrolebinding self-provisioner   -p '{"subjects": null}'
 vi project-template.yaml
 
 apiVersion: template.openshift.io/v1
@@ -560,8 +560,8 @@ Arch diagram
 ===================================
 
 Lab 6: Allow application access to Kubernetes APIs
-Objective
 
+Objective
 Allow a pod to query the Kubernetes API using a service account and RBAC.
 
 Step 1: Create a project
@@ -740,8 +740,8 @@ reduce upgrade risk
 ===================================
 
 Lab 10: Check operator update settings with OLM
-Objective
 
+Objective
 See how operator updates are controlled.
 Step 1: View subscriptions across the cluster
 oc get subscription -A
