@@ -565,7 +565,7 @@ Objective
 Allow a pod to query the Kubernetes API using a service account and RBAC.
 
 Step 1: Create a project
-oc new-project api-access-demo-student1-18
+oc new-project api-access-demo-student19
 
 Step 2: Create a service account
 oc create serviceaccount api-reader
@@ -591,6 +591,7 @@ oc create rolebinding api-reader-binding \
   --serviceaccount=api-access-demo-student<1-18>:api-reader
 
 Step 5: Run a pod using that service account
+
 vi api-test.yaml
 
 apiVersion: v1
@@ -614,6 +615,9 @@ Inside the pod, test token and API access:
 TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
 CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
 NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+
+echo $TOKEN
+
 curl -s --cacert $CACERT -H "Authorization: Bearer $TOKEN" \
 https://kubernetes.default.svc/api/v1/namespaces/$NAMESPACE/pods
 
@@ -635,8 +639,7 @@ Use a CronJob to automate periodic work.
 Good example
 A simple cleanup or logging task.
 
-Step 1: Create a project
-oc new-project cron-demo
+Step 1: Use the existing project.
 
 Step 2: Create a CronJob
 Create cronjob.yaml
@@ -722,6 +725,95 @@ oc describe clusteroperator console
 Replace console if another operator is unhealthy.
 
 Cluster updates depend on operators being healthy.
+
+===
+1. Check Cluster Version
+oc get clusterversion
+Look for:
+Available = True
+Progressing = False
+Degraded = False
+
+🔹 2. Check Cluster Operators (MOST IMPORTANT)
+oc get clusteroperators
+All should be:
+AVAILABLE=True
+PROGRESSING=False
+DEGRADED=False
+❌ If any operator is degraded
+
+👉 Fix before upgrade
+
+Example:
+
+oc describe clusteroperator console
+
+🔹 3. Check Nodes Health
+oc get nodes
+All nodes should be:
+Ready
+
+
+🔹 4. Check Pods (Critical namespaces)
+oc get pods -A
+
+Focus on:
+CrashLoopBackOff
+Error
+Pending
+
+🔹 5. Check Deprecated APIs (VERY IMPORTANT)
+oc get apirequestcounts
+
+Inspect:
+
+oc describe apirequestcounts <api-name>
+Why?
+
+👉 Deprecated APIs will break after upgrade
+
+🔹 6. Check Operators (OLM)
+oc get csv -A
+Ensure:
+All CSV = Succeeded
+
+🔹 7. Check Subscriptions
+oc get subscription -A
+Look for:
+unhealthy or stuck upgrades
+🔹 8. Check Storage (PVCs)
+oc get pvc -A
+Ensure:
+all PVCs are Bound
+🔹 9. Check Events (hidden issues)
+oc get events -A | grep -i error
+🔹 10. Backup (VERY IMPORTANT in real world)
+etcd backup
+application backup
+
+Example (cluster admin level):
+
+oc adm cluster-backup
+🔹 11. Check Capacity
+oc adm top nodes
+
+Ensure:
+
+enough CPU
+enough memory
+🔹 12. Check MCP (Machine Config Pools)
+oc get mcp
+Must be:
+Updated=True
+Updating=False
+Degraded=False
+🔹 13. Check Image Registry / External Dependencies
+image pull working
+registry accessible
+external services reachable
+
+===
+
 
 ===================================
 
