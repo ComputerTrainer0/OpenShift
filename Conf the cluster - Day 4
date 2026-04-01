@@ -1,0 +1,794 @@
+Hands On - Service Load Balancer:
+
+oc run nginx-lb --image=nginx --restart=Never --port=80
+oc get pod nginx-lb
+oc expose pod nginx-lb --port=80 --type=LoadBalancer
+oc get svc nginx-lb -w
+#Wait for 5 mins before testing the URL
+curl http://a851183949fbf4cb9b642031b289d3ca-1283609437.us-east-1.elb.amazonaws.com
+
+===========================================
+
+Kustomize:
+
+Folder Structure:
+
+  kustomize-demo/
+  ├── base
+  │   ├── deployment.yaml
+  │   ├── service.yaml
+  │   └── kustomization.yaml
+  └── overlays
+      ├── dev
+      │   └── kustomization.yaml
+      └── prod
+          └── kustomization.yaml
+
+Task:
+
+Create a base with nginx deployment and service
+Create a dev overlay with:
+  prefix dev-
+  label env=dev
+  1 replica
+Create a prod overlay with:
+  prefix prod-
+  label env=prod
+  3 replicas
+Apply both and verify resources
+
+Explanation:
+base = common reusable config
+overlay = environment-specific customization
+same app can be deployed differently for:
+  dev
+  test
+  prod
+
+Hands on:
+
+mkdir -p ~/kustomize-demo/base
+mkdir -p ~/kustomize-demo/overlays/dev
+mkdir -p ~/kustomize-demo/overlays/prod
+cd ~/kustomize-demo
+
+cat > ~/kustomize-demo/base/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.25
+        ports:
+        - containerPort: 80
+EOF
+
+cat > ~/kustomize-demo/base/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+  - port: 80
+    targetPort: 80
+EOF
+
+#Adding details to kutomization
+cat > ~/kustomize-demo/base/kustomization.yaml
+resources:
+- deployment.yaml
+- service.yaml
+
+#Testing the base:
+oc kustomize base
+
+cat > ~/kustomize-demo/overlays/dev/kustomization.yaml
+resources:
+- ../../base
+
+namePrefix: dev-
+
+commonLabels:
+  env: dev
+
+replicas:
+- name: nginx
+  count: 1
+
+images:
+- name: nginx
+  newName: nginx
+  newTag: "1.25"
+
+EOF
+
+oc kustomize overlays/dev
+oc apply -k overlays/dev
+
+cat > ~/kustomize-demo/overlays/prod/kustomization.yaml
+resources:
+- ../../base
+
+namePrefix: prod-
+
+commonLabels:
+  env: prod
+
+replicas:
+- name: nginx
+  count: 3
+
+images:
+- name: nginx
+  newName: nginx
+  newTag: "1.27"
+
+oc kustomize overlays/prod
+oc apply -k overlays/prod
+
+Verify:
+oc get deployment
+oc get pods
+oc get svc
+
+Delete:
+oc delete -k overlays/dev
+oc delete -k overlays/prod
+
+
+===========================================
+Hand's On Helm: (After 2:00 PM)
+
+helm create my-nginx
+
+Important files:
+values.yaml → configuration
+templates/deployment.yaml → deployment
+templates/service.yaml → service
+
+
+helm install nginx-release ./my-nginx
+
+oc get pods
+oc get svc
+
+oc expose svc nginx-release-my-nginx
+
+vi my-nginx/values.yaml
+
+replicaCount: 3
+
+image:
+  repository: 35.153.133.45:5000/nginx
+  tag: "1.27"
+
+helm upgrade nginx-release ./my-nginx
+helm list
+helm history nginx-release 
+helm rollback nginx-release 1
+helm uninstall nginx-release
+
+===================================
+
+
+Hand's On Project Template & Self-Provisioner Role:
+
+Steps:
+create self-provisioner permission & Grant
+Check who can create projects
+Disable self-provisioning
+Create a custom project template
+Apply it
+Test with a student user
+
+#delete oc adm policy remove-cluster-role-from-group self-provisioner system:authenticated:oauth
+
+Try Creating NS named demo-student-n1
+
+#Create a group
+oc adm policy add-cluster-role-to-group self-provisioner system:authenticated:oauth
+oc adm policy add-cluster-role-to-user self-provisioner student1
+
+
+oc get clusterrolebinding self-provisioners -o yaml
+oc patch clusterrolebinding self-provisioners   -p '{"subjects": null}'
+vi project-template.yaml
+
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: project-template
+objects:
+- apiVersion: project.openshift.io/v1
+  kind: Project
+  metadata:
+    name: ${PROJECT_NAME}
+    annotations:
+      description: "Custom Project for ${PROJECT_NAME}"
+- apiVersion: v1
+  kind: LimitRange
+  metadata:
+    name: limits
+    namespace: ${PROJECT_NAME}
+  spec:
+    limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+parameters:
+- name: PROJECT_NAME
+  required: true
+
+oc create -f project-template.yaml -n openshift-config
+
+oc patch project.config.openshift.io/cluster \
+  --type=merge \
+  -p '{"spec":{"projectRequestTemplate":{"name":"project-template"}}}'
+
+Try Creating NS named demo-student-n<1-18>
+
+oc get project <YOURPROJECTNAME> -o yaml
+oc get limitrange -n myapp
+oc describe limitrange limits -n myapp
+
+
+#Additonal Information:
+
+oc create -f - <<EOF
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: my-limits
+  namespace: myapp
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi
+EOF
+
+
+===================================
+
+
+
+Lab : View and understand Operators and OLM
+
+objective
+Understand what Operators are and identify the OLM components already running in the cluster.
+
+Step 1: View marketplace catalog sources
+oc get catalogsource -n openshift-marketplace #These are the operator catalogs from which operators are installed.
+
+#Step 2: View installed operators
+
+oc get csv -A #CSV means ClusterServiceVersion. This shows installed operator versions and their status.
+
+Step 3: View subscriptions
+oc get subscription -A  
+
+# A Subscription tells OLM:
+which operator to install
+which channel to track
+whether updates are automatic or manual
+
+Step 4: View install plans
+oc get installplan -A
+
+An InstallPlan is the action plan OLM uses to install or upgrade an operator.
+
+Step 5: View operator pods
+oc get pods -A | grep -i operator
+
+Operators are just controllers running as pods.
+
+    Quick diagram
+    
+    CatalogSource
+        ↓
+    Subscription
+        ↓
+    InstallPlan
+        ↓
+    CSV
+        ↓
+    Operator Pod Running
+
+===================================
+
+Lab 2: Install an Operator using the Web Console
+
+Objective
+Install an Operator from OperatorHub using the console.
+
+Use something simple and safe, like:
+Node Feature Discovery
+Local Storage Operator
+or another lightweight operator available in your cluster
+
+Step 1: Open OperatorHub
+
+In the console:
+
+Go to Operators
+Click OperatorHub
+
+Step 2: Search for an operator
+Search for:
+Node Feature Discovery
+
+Step 3: Click Install
+Choose:
+Installation mode:
+A specific namespace on the cluster
+Namespace:
+create or choose operator-demo
+Update approval:
+Automatic for easy lab
+
+Step 4: Wait for installation
+After installation:
+go to Operators > Installed Operators
+verify operator shows Succeeded
+
+Step 5: Verify using CLI
+oc get csv -A
+oc get subscription -A
+oc get pods -A |grep openshift-nfd
+
+
+Expected result
+You should see:
+one subscription
+one CSV in Succeeded
+operator pod running
+
+
+===================================
+
+Lab 3: Install an Operator using the CLI
+
+Objective
+Install an Operator using OperatorGroup and Subscription.
+
+Step 1: Create a project
+oc new-project operator-demo
+
+Step 2: Create the OperatorGroup
+Create operatorgroup.yaml
+
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: operator-demo-group
+  namespace: operator-demo
+spec:
+  targetNamespaces:
+  - operator-demo
+
+Apply it:
+oc apply -f operatorgroup.yaml
+
+Step 3: Identify the exact operator package name
+
+Check available package manifests:
+oc get packagemanifest -n openshift-marketplace | head
+
+Search for a package:
+oc get packagemanifest -n openshift-marketplace | grep -i node
+
+You can also inspect one:
+oc describe packagemanifest <package-name> -n openshift-marketplace
+
+Step 4: Create the Subscription
+Example subscription.yaml:
+
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: nfd
+  namespace: operator-demo
+spec:
+  channel: stable
+  name: nfd
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic
+
+Apply it:
+oc apply -f subscription.yaml
+Note: if nfd is not the exact package name in your cluster, replace it with the package name from packagemanifest.
+
+Step 5: Verify installation
+oc get subscription -n operator-demo
+oc get installplan -n operator-demo
+oc get csv -n operator-demo
+oc get pods -n operator-demo
+
+Troubleshooting
+If CSV does not become Succeeded, check:
+oc describe subscription nfd -n operator-demo
+oc describe csv -n operator-demo
+oc get events -n operator-demo
+
+
+Quick CLI diagram
+    Namespace
+       ↓
+    OperatorGroup
+       ↓
+    Subscription
+       ↓
+    InstallPlan
+       ↓
+    CSV Succeeded
+
+===================================
+
+Lab 4: Manage Operators
+
+Objective
+Inspect, monitor, and understand how operators are updated.
+
+Step 1: View subscription details
+oc describe subscription -n operator-demo
+
+This shows:
+current channel
+installed CSV
+source catalog
+approval mode
+
+Step 2: View CSV details
+oc describe csv -n operator-demo
+
+This shows:
+operator version
+permissions
+owned CRDs
+status conditions
+
+Step 3: View InstallPlans
+oc get installplan -n operator-demo
+oc describe installplan -n operator-demo
+
+Step 4: Delete the subscription
+oc delete subscription nfd -n operator-demo
+
+Deleting the subscription stops future updates.
+It does not always remove the CSV and CRDs automatically.
+
+Step 5: View what remains
+oc get csv -n operator-demo
+oc get crd | head
+Teaching point
+
+Removing an operator is not always the same as cleaning all managed resources.
+
+===================================
+
+
+Lab 5: Control application permissions with SCC
+
+Objective
+Understand Security Context Constraints and how OpenShift restricts containers.
+
+What will be covered:
+Why pods fail under default SCC
+How to inspect SCCs
+How to grant an SCC to a service account
+
+Step 1: View SCCs
+oc get scc
+
+Step 2: Inspect the default restricted SCC
+oc describe scc restricted-v2
+If your cluster uses a different name, check restricted.
+
+This SCC prevents many risky behaviors:
+running as root
+privileged mode
+host networking
+hostPath access
+
+Step 3: Create a pod that may require elevated permissions
+
+Create root-pod.yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: root-test
+spec:
+  containers:
+  - name: root-test
+    image: nginx
+    securityContext:
+      runAsUser: 0
+
+Apply it:
+oc apply -f root-pod.yaml
+
+Step 4: Check why it fails
+oc get pod root-test
+oc describe pod root-test
+
+Expected
+You should see an SCC-related denial.
+
+Step 5: Grant a less restrictive SCC
+oc adm policy add-scc-to-user anyuid -z default
+
+This grants the anyuid SCC to the default service account in the current namespace.
+
+Step 6: Delete and recreate the pod
+oc delete pod root-test
+oc apply -f root-pod.yaml
+oc get pod root-test
+Now it should start.
+
+Arch diagram
+    Pod requests settings
+          ↓
+    OpenShift checks SCC
+          ↓
+    Allowed? → Pod runs
+    Denied?  → Pod blocked
+
+===================================
+
+Lab 6: Allow application access to Kubernetes APIs
+Objective
+
+Allow a pod to query the Kubernetes API using a service account and RBAC.
+
+Step 1: Create a project
+oc new-project api-access-demo
+
+Step 2: Create a service account
+oc create serviceaccount api-reader
+
+Step 3: Create a Role
+Create role.yaml
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+
+Apply it:
+oc apply -f role.yaml
+
+Step 4: Bind the role to the service account
+oc create rolebinding api-reader-binding \
+  --role=pod-reader \
+  --serviceaccount=api-access-demo:api-reader
+
+Step 5: Run a pod using that service account
+oc run api-test \
+  --image=registry.access.redhat.com/ubi9/ubi-minimal \
+  --serviceaccount=api-reader \
+  --command -- sleep 3600
+
+Step 6: Open a shell
+oc rsh pod/api-test
+Inside the pod, test token and API access:
+
+TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+curl -s --cacert $CACERT -H "Authorization: Bearer $TOKEN" \
+https://kubernetes.default.svc/api/v1/namespaces/$NAMESPACE/pods
+
+Expected result
+You should get JSON output listing pods in that namespace.
+
+This is how applications safely access the Kubernetes API:
+ServiceAccount identity
+RBAC permissions
+mounted token/cert
+
+===================================
+
+Lab 7: Cluster and node maintenance with CronJobs
+
+Objective
+Use a CronJob to automate periodic work.
+
+Good example
+A simple cleanup or logging task.
+
+Step 1: Create a project
+oc new-project cron-demo
+
+Step 2: Create a CronJob
+Create cronjob.yaml
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hello-cron
+spec:
+  schedule: "*/2 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: registry.access.redhat.com/ubi9/ubi-minimal
+            command:
+            - /bin/sh
+            - -c
+            - date; echo "OpenShift CronJob executed"
+          restartPolicy: OnFailure
+
+Apply it:
+oc apply -f cronjob.yaml
+
+Step 3: Check CronJob
+oc get cronjob
+
+Step 4: Wait a couple of minutes and check Jobs
+oc get jobs
+
+Step 5: View pod logs from the job
+oc get pods
+oc logs <job-pod-name>
+
+CronJobs are used for:
+backups
+cleanup
+periodic reports
+maintenance tasks
+
+Diagram
+    Cron schedule
+        ↓
+    CronJob creates Job
+        ↓
+    Job creates Pod
+        ↓
+    Pod runs task and exits
+
+===================================
+
+Lab 8: Check the cluster update process
+Objective
+Understand how OpenShift updates are managed and where to inspect cluster version status.
+
+Step 1: Check cluster version
+oc get clusterversion
+
+Step 2: Describe cluster version
+oc describe clusterversion version
+
+This shows:
+current version
+available updates
+update history
+conditions
+
+Step 3: Check cluster operators
+oc get clusteroperators
+
+Step 4: Identify unhealthy operators
+oc get clusteroperators
+
+Look at:
+AVAILABLE
+PROGRESSING
+DEGRADED
+
+Step 5: Describe a problematic operator
+oc describe clusteroperator console
+Replace console if another operator is unhealthy.
+
+Cluster updates depend on operators being healthy.
+
+===================================
+
+Lab 9: Detect deprecated Kubernetes API usage
+
+Objective
+Check whether workloads are using deprecated APIs before an upgrade.
+
+Step 1: View API request counts
+oc get apirequestcounts
+
+Step 2: Inspect one API request count
+oc describe apirequestcounts <name>
+
+Example:
+oc describe apirequestcounts deployments.v1.apps
+
+This helps administrators find:
+which APIs are being used
+whether any old/deprecated versions are still active
+
+Before upgrading:
+identify deprecated API usage
+update manifests and applications
+reduce upgrade risk
+
+===================================
+
+Lab 10: Check operator update settings with OLM
+Objective
+
+See how operator updates are controlled.
+Step 1: View subscriptions across the cluster
+oc get subscription -A
+
+Step 2: Describe a subscription
+oc describe subscription -n operator-demo
+
+Step 3: Look for approval mode
+
+Find:
+installPlanApproval: Automatic
+or
+installPlanApproval: Manual
+
+Step 4: If manual approval is configured
+
+Check install plans:
+oc get installplan -n operator-demo
+
+Describe:
+oc describe installplan -n operator-demo
+
+Check:
+oc get subscription -n <ns>
+oc get installplan -n <ns>
+oc get csv -n <ns>
+oc get events -n <ns>
+Pod blocked by SCC
+
+Check:
+
+oc describe pod <pod-name>
+oc get scc
+CronJob not firing
+
+Check:
+
+oc get cronjob
+oc get jobs
+oc describe cronjob <name>
+Update concerns
+
+Check:
+
+oc get clusterversion
+oc get clusteroperators
+oc get apirequestcounts
+
+
+
