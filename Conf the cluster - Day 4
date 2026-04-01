@@ -1,6 +1,6 @@
 Hands On - Service Load Balancer:
 
-oc run nginx-lb --image=nginx --restart=Never --port=80
+oc run nginx-lb --image=35.153.133.45:5000/nginx  --restart=Never --port=80
 oc get pod nginx-lb
 oc expose pod nginx-lb --port=80 --type=LoadBalancer
 oc get svc nginx-lb -w
@@ -69,9 +69,9 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: nginx:1.25
+        image: 35.153.133.45:5000/nginx-unprivileged:1.25
         ports:
-        - containerPort: 80
+        - containerPort: 8080
 EOF
 
 cat > ~/kustomize-demo/base/service.yaml
@@ -84,7 +84,7 @@ spec:
     app: nginx
   ports:
   - port: 80
-    targetPort: 80
+    targetPort: 8080
 EOF
 
 #Adding details to kutomization
@@ -111,7 +111,7 @@ replicas:
 
 images:
 - name: nginx
-  newName: nginx
+  newName: 35.153.133.45:5000/nginx-unprivileged
   newTag: "1.25"
 
 EOF
@@ -134,7 +134,7 @@ replicas:
 
 images:
 - name: nginx
-  newName: nginx
+  newName: 35.153.133.45:5000/nginx-unprivileged
   newTag: "1.27"
 
 oc kustomize overlays/prod
@@ -525,8 +525,7 @@ spec:
   containers:
   - name: root-test
     image: nginx
-    securityContext:
-      runAsUser: 0
+
 
 Apply it:
 oc apply -f root-pod.yaml
@@ -539,7 +538,7 @@ Expected
 You should see an SCC-related denial.
 
 Step 5: Grant a less restrictive SCC
-oc adm policy add-scc-to-user anyuid -z default
+oc adm policy add-scc-to-user anyuid -z default -n student-n1
 
 This grants the anyuid SCC to the default service account in the current namespace.
 
