@@ -4,8 +4,10 @@ wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-
 tar -xvf openshift-install-linux.tar.gz
 wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz
 tar -xvf openshift-client-linux.tar.gz
-sudo mv oc kubectl openshift-install /usr/local/bin/openshift-install version
+sudo mv oc kubectl openshift-install /usr/local/bin/
+openshift-install version
 oc version
+
 vi pull-secret.json
 
 openshift-install create install-config
