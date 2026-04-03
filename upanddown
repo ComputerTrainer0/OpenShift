@@ -42,7 +42,7 @@ EOF
 
 openshift-install create manifests --dir=.
 openshift-install create cluster --dir=. --log-level=debug
- export KUBECONFIG=/home/ec2-user/old/ocp-clean/auth/kubeconfig
+ export KUBECONFIG=/home/ec2-user/ocp/auth/kubeconfig
 oc scale machineset venky-ocp-gxccw-worker-us-east-1d   -n openshift-machine-api --replicas=0
 oc scale machineset venky-ocp-gxccw-worker-us-east-1d   -n openshift-machine-api --replicas=0
 
