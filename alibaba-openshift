@@ -1,0 +1,49 @@
+openshift-install (platform: none)
+        ↓
+Generate Ignition files
+        ↓
+Create RHCOS image → upload to OSS
+        ↓
+Import to ECS as custom image
+        ↓
+Create ECS instances (bootstrap / master / worker)
+        ↓
+Attach ignition (user-data)
+        ↓
+Setup SLB + DNS
+        ↓
+Cluster comes up
+
+
+https://mirror.openshift.com/pub/openshift-v4/
+
+rhcos-qemu.x86_64.qcow2.gz
+
+
+region: eu-west-1
+
+
+ossutil ls oss://openshift-image
+ossutil cp bootstrap.ign oss://openshift-image/
+ossutil cp master.ign oss://openshift-image/
+ossutil cp worker.ign oss://openshift-image/
+
+wget https://gosspublic.alicdn.com/ossutil/v2/2.1.1/ossutil-2.1.1-linux-amd64.zip
+unzip ossutil-2.1.1-linux-amd64.zip
+chmod +x ossutil
+mv ossutil-2.1.1-linux-amd64/ossutil /usr/local/bin/
+
+
+
+For Bootstrap node
+coreos.inst.install_dev=/dev/vda \
+coreos.inst.ignition_url=https://openshift-image.oss-cn-hangzhou.aliyuncs.com/bootstrap.ign \
+coreos.inst.insecure
+For Master node
+coreos.inst.install_dev=/dev/vda \
+coreos.inst.ignition_url=https://openshift-image.oss-cn-hangzhou.aliyuncs.com/master.ign \
+coreos.inst.insecure
+For Worker node
+coreos.inst.install_dev=/dev/vda \
+coreos.inst.ignition_url=https://openshift-image.oss-cn-hangzhou.aliyuncs.com/worker.ign \
+coreos.inst.insecure
