@@ -1,3 +1,5 @@
+#Setting Up GCP Service
+===
 sudo tee -a /etc/yum.repos.d/google-cloud-sdk.repo << EOM
 [google-cloud-cli]
 name=Google Cloud CLI
@@ -9,6 +11,19 @@ gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
 EOM
 
 sudo yum install google-cloud-cli
+===
+
+#Logging In
+===
+gcloud auth login
+gcloud auth login --no-launch-browser
+Go to the following link in your browser, and complete the sign-in prompts:
+
+    https://accounts.google.com/o/oauth2/auth?response_type=code&client_id=32555940559.apps.googleusercontent.com&redirect_uri=https%3A%2F%2Fsdk.cloud.google.com%2Fauthcode.html&scope=openid+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fappengine.admin+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fsqlservice.login+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcompute+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Faccounts.reauth&state=4UaZGcw1fQEXnNl4uKbgKWZLfSGL3C&prompt=consent&token_usage=remote&access_type=offline&code_challenge=SvXOQkjO5mQ-uJJxlar_mEViW2t7ekDf2z8X9trYCCA&code_challenge_method=S256
+
+Once finished, enter the verification code provided in your browser: 4/0AeoWuM9LOrnLz4ctpCbU7Vf_Gxs_KhGHQPq5IdzmKOwEBmliODczn1TUiDqWgJ_OEtlS0w
+===
 
 
+gcloud config set project venky-ocp-gcp
 
