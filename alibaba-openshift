@@ -19,21 +19,68 @@ https://mirror.openshift.com/pub/openshift-v4/
 
 rhcos-qemu.x86_64.qcow2.gz
 
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-install-linux.tar.gz
+tar -xvf openshift-install-linux.tar.gz
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz
+tar -xvf openshift-client-linux.tar.gz
+sudo mv oc kubectl openshift-install /usr/local/bin/
+openshift-install version
+oc version
 
-region: eu-west-1
 
+vi install-config.yaml
+====
+apiVersion: v1
+baseDomain: beyondcloud.online
+metadata:
+  name: venky-ocp
 
-ossutil ls oss://openshift-image
-ossutil cp bootstrap.ign oss://openshift-image/
-ossutil cp master.ign oss://openshift-image/
-ossutil cp worker.ign oss://openshift-image/
+compute:
+- name: worker
+  replicas: 1
+
+controlPlane:
+  name: master
+  replicas: 1
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  serviceNetwork:
+  - 172.30.0.0/16
+
+platform:
+  none: {}
+
+fips: false
+
+pullSecret: ...
+
+#EOF
+====
+
+openshift-install create manifests --dir=.
+openshift-install create ignition-configs --dir=.
+
 
 wget https://gosspublic.alicdn.com/ossutil/v2/2.1.1/ossutil-2.1.1-linux-amd64.zip
 unzip ossutil-2.1.1-linux-amd64.zip
 chmod +x ossutil
 mv ossutil-2.1.1-linux-amd64/ossutil /usr/local/bin/
 
+ossutil config
+Key
+Sec
+region: eu-west-1
 
+ossutil ls oss://openshift-image
+ossutil cp bootstrap.ign oss://openshift-image/
+ossutil cp master.ign oss://openshift-image/
+ossutil cp worker.ign oss://openshift-image/
+
+        
 
 For Bootstrap node
 coreos.inst.install_dev=/dev/vda \
@@ -47,3 +94,20 @@ For Worker node
 coreos.inst.install_dev=/dev/vda \
 coreos.inst.ignition_url=https://openshift-image.oss-cn-hangzhou.aliyuncs.com/worker.ign \
 coreos.inst.insecure
+
+
+SLB Configuration:
+
+https://github.com/ComputerTrainer0/OpenShift/blob/949077fa4d638ade54bc8b39bf1f85960a5002a9/port_number.png
+
+DNS configuration:
+
+25.1   → api.beyondcloud.online
+18.1   → master2.beyondcloud.online
+20.1   → worker1.beyondcloud.online
+25.1   → api-int.beyondcloud.online
+21.1   → worker2.beyondcloud.online
+17.1   → master1.beyondcloud.online
+19.1   → worker0.beyondcloud.online
+22.1   → bootstrap.beyondcloud.online
+16.1   → master0.beyondcloud.online
