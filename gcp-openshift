@@ -187,16 +187,3 @@ oc get route
 ===
 openshift-install destroy cluster --dir=~/ocp-gcp/install --log-level=debug
 ===
-
-
-
-
-
-
-
-
-
-
-
-gcloud config set project venky-ocp-gcp
-
