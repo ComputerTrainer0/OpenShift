@@ -13,7 +13,7 @@ EOM
 sudo yum install google-cloud-cli
 ===
 
-#Logging In
+#Logging In:
 ===
 gcloud auth login
 gcloud auth login --no-launch-browser
@@ -21,8 +21,181 @@ Go to the following link in your browser, and complete the sign-in prompts:
 
     https://accounts.google.com/o/oauth2/auth?response_type=code&client_id=32555940559.apps.googleusercontent.com&redirect_uri=https%3A%2F%2Fsdk.cloud.google.com%2Fauthcode.html&scope=openid+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fappengine.admin+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fsqlservice.login+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcompute+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Faccounts.reauth&state=4UaZGcw1fQEXnNl4uKbgKWZLfSGL3C&prompt=consent&token_usage=remote&access_type=offline&code_challenge=SvXOQkjO5mQ-uJJxlar_mEViW2t7ekDf2z8X9trYCCA&code_challenge_method=S256
 
-Once finished, enter the verification code provided in your browser: 4/0AeoWuM9LOrnLz4ctpCbU7Vf_Gxs_KhGHQPq5IdzmKOwEBmliODczn1TUiDqWgJ_OEtlS0w
+Once finished, enter the verification code provided in your browser: 
+
+Command to check if you have logged in:
+gcloud auth list
+
 ===
+
+#Project Info:
+===
+gcloud config set project venky-ocp-gcp
+gcloud config get-value project
+
+Set the services:
+gcloud services enable compute.googleapis.com
+gcloud services enable cloudresourcemanager.googleapis.com
+gcloud services enable iam.googleapis.com
+gcloud services enable dns.googleapis.com
+gcloud services enable serviceusage.googleapis.com
+gcloud services enable storage.googleapis.com
+
+===
+
+# Service Account:
+===
+
+mkdir ocp-gcp/
+cd ocp-gcp/
+
+gcloud iam service-accounts create ocp-installer \
+  --display-name="OpenShift Installer"
+
+PROJECT_ID=$(gcloud config get-value project)
+SA_EMAIL="ocp-installer@${PROJECT_ID}.iam.gserviceaccount.com"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/owner"
+
+gcloud iam service-accounts keys create gcp-ocp-key.json \
+  --iam-account="${SA_EMAIL}"
+
+export GOOGLE_APPLICATION_CREDENTIALS=gcp-ocp-key.json
+
+===
+
+# DNS Setup:
+===
+Setup a domain like: beyondcloud.online
+
+Base domain: gcp.beyondcloud.online
+Cluster name: venky
+Full cluster: venky.gcp.beyondcloud.online
+
+Customize the name of the cluster @install-config.yaml file the only way to change it.
+
+gcloud dns managed-zones create ocp-zone \
+  --dns-name="gcp.beyondcloud.online." \
+  --description="OpenShift GCP DNS zone" \
+  --visibility="public"
+
+gcloud dns managed-zones describe ocp-zone \
+  --format="value(nameServers)"
+
+dig NS gcp.beyondcloud.online
+
+===
+
+#Download OC and OC isntaller with kubectl:
+===
+
+# Example only; use your required version from Red Hat
+wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/latest/openshift-install-linux.tar.gz
+wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/latest/openshift-client-linux.tar.gz
+
+tar -xzf openshift-install-linux.tar.gz
+tar -xzf openshift-client-linux.tar.gz
+
+sudo mv oc kubectl openshift-install /usr/local/bin/
+
+openshift-install version
+oc version --client
+
+===
+#Installation Configuraiton file:
+===
+
+vi install-config.yaml
+
+apiVersion: v1
+baseDomain: gcp.beyondcloud.online
+metadata:
+  name: venky
+
+platform:
+  gcp:
+    projectID: venky-ocp-gcp
+    region: europe-west2 #(choose europe-west1 or us-central1 for cheaper servers)
+
+controlPlane:
+  name: master
+  replicas: 3
+  platform:
+    gcp:
+      type: n2-standard-4
+      osDisk:
+        diskSizeGB: 120
+        diskType: pd-ssd
+
+compute:
+- name: worker
+  replicas: 2
+  platform:
+    gcp:
+      type: n2-standard-4
+      osDisk:
+        diskSizeGB: 120
+        diskType: pd-ssd
+
+networking:
+  networkType: OVNKubernetes
+  machineNetwork:
+  - cidr: 10.0.0.0/16
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  serviceNetwork:
+  - 172.30.0.0/16
+
+pullSecret: '<YOUR_PULL_SECRET>'
+sshKey: 'ssh-rsa AAAA...'
+
+EOF
+
+===
+
+#All Set Lets execte the cluster creation process:
+===
+openshift-install create install-config --dir=.
+===
+
+#Work with OC:
+===
+
+export KUBECONFIG=install/auth/kubeconfig
+
+oc get nodes
+oc get co
+oc get pods -A
+
+oc get clusterversion
+oc get clusteroperators
+oc get machines -A
+
+cat install/auth/kubeadmin-password - For console access
+
+oc new-project demo
+oc new-app nginxinc/nginx-unprivileged
+oc expose svc/nginx-unprivileged
+oc get route
+
+===
+
+#Destroy the oc cluster:
+===
+openshift-install destroy cluster --dir=~/ocp-gcp/install --log-level=debug
+===
+
+
+
+
+
+
+
+
+
 
 
 gcloud config set project venky-ocp-gcp
