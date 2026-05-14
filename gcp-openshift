@@ -160,7 +160,7 @@ EOF
 
 #All Set Lets execte the cluster creation process:
 ===
-openshift-install create install-config --dir=.
+openshift-install create cluster --dir=. --log-level=debug
 ===
 
 #Work with OC:
