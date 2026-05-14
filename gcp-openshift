@@ -64,6 +64,8 @@ gcloud iam service-accounts keys create gcp-ocp-key.json \
 
 export GOOGLE_APPLICATION_CREDENTIALS=gcp-ocp-key.json
 
+gcloud auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS
+
 ===
 
 # DNS Setup:
