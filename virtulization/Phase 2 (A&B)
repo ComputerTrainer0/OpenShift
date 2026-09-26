@@ -1,0 +1,231 @@
+On windows-2022-db, open SQL Server Management Studio and connect to:
+
+Server: localhost
+Authentication: SQL Server Authentication
+Login: sa
+Password: <the password you created>
+
+
+CREATE DATABASE LegacyOrders;
+GO
+
+USE LegacyOrders;
+GO
+
+CREATE TABLE Customers (
+    CustomerID INT IDENTITY(1,1) PRIMARY KEY,
+    CustomerName NVARCHAR(100) NOT NULL,
+    Email NVARCHAR(150),
+    Phone NVARCHAR(30),
+    CreatedDate DATETIME2 DEFAULT SYSDATETIME()
+);
+GO
+
+CREATE TABLE Orders (
+    OrderID INT IDENTITY(1000,1) PRIMARY KEY,
+    CustomerID INT NOT NULL,
+    OrderDate DATETIME2 DEFAULT SYSDATETIME(),
+    Status NVARCHAR(30) DEFAULT 'NEW',
+    TotalAmount DECIMAL(12,2) NOT NULL,
+    InvoicePath NVARCHAR(500),
+    CONSTRAINT FK_Orders_Customers
+        FOREIGN KEY (CustomerID)
+        REFERENCES Customers(CustomerID)
+);
+GO
+
+CREATE TABLE OrderItems (
+    OrderItemID INT IDENTITY(1,1) PRIMARY KEY,
+    OrderID INT NOT NULL,
+    ProductName NVARCHAR(150) NOT NULL,
+    Quantity INT NOT NULL,
+    UnitPrice DECIMAL(12,2) NOT NULL,
+    CONSTRAINT FK_OrderItems_Orders
+        FOREIGN KEY (OrderID)
+        REFERENCES Orders(OrderID)
+);
+GO
+
+CREATE TABLE AuditLog (
+    AuditID BIGINT IDENTITY(1,1) PRIMARY KEY,
+    EventType NVARCHAR(50),
+    Description NVARCHAR(500),
+    EventDate DATETIME2 DEFAULT SYSDATETIME()
+);
+GO
+
+
+USE master;
+GO
+
+CREATE LOGIN legacyapp
+WITH PASSWORD = 'R3dCloud!Sql#2026$Lab9';
+GO
+
+USE LegacyOrders;
+GO
+
+CREATE USER legacyapp FOR LOGIN legacyapp;
+GO
+
+ALTER ROLE db_datareader ADD MEMBER legacyapp;
+ALTER ROLE db_datawriter ADD MEMBER legacyapp;
+GO
+
+GRANT EXECUTE TO legacyapp;
+GO
+
+
+INSERT INTO Customers (CustomerName, Email, Phone)
+VALUES
+('Contoso Manufacturing', 'orders@contoso.local', '02070001001'),
+('Northwind Trading', 'sales@northwind.local', '02070001002'),
+('Fabrikam Industries', 'procurement@fabrikam.local', '02070001003');
+GO
+
+INSERT INTO Orders (CustomerID, Status, TotalAmount)
+VALUES
+(1, 'NEW', 1299.99),
+(2, 'PROCESSING', 850.50),
+(3, 'COMPLETED', 2450.00);
+GO
+
+INSERT INTO OrderItems (OrderID, ProductName, Quantity, UnitPrice)
+VALUES
+(1000, 'Industrial Sensor', 5, 259.998),
+(1001, 'Network Controller', 2, 425.25),
+(1002, 'Power Management Unit', 10, 245.00);
+GO
+
+
+SELECT * FROM Customers;
+SELECT * FROM Orders;
+SELECT * FROM OrderItems;
+
+
+Test-NetConnection db01.vm-lab.svc.cluster.local -Port 1433
+
+
+
+Tomcat:
+
+legacyorders
+├── index.jsp
+└── WEB-INF
+    └── web.xml
+
+C:\Program Files\Apache Software Foundation\Tomcat 11.0\webapps\legacyorders\index.jsp
+
+
+<%@ page import="java.sql.*" %>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Legacy Orders</title>
+</head>
+<body>
+
+<h1>Legacy Order Management</h1>
+
+<%
+String url =
+    "jdbc:sqlserver://db01.vm-lab.svc.cluster.local:1433;" +
+    "databaseName=LegacyOrders;" +
+    "encrypt=true;" +
+    "trustServerCertificate=true;";
+
+String user = "legacyapp";
+String password = "PUT-YOUR-LEGACYAPP-PASSWORD-HERE";
+
+try {
+    Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+
+    Connection conn = DriverManager.getConnection(url, user, password);
+
+    Statement stmt = conn.createStatement();
+
+    ResultSet rs = stmt.executeQuery(
+        "SELECT CustomerID, CustomerName, Email, Phone FROM Customers"
+    );
+%>
+
+<h2>Customers</h2>
+
+<table border="1" cellpadding="8">
+<tr>
+    <th>ID</th>
+    <th>Name</th>
+    <th>Email</th>
+    <th>Phone</th>
+</tr>
+
+<%
+    while (rs.next()) {
+%>
+
+<tr>
+    <td><%= rs.getInt("CustomerID") %></td>
+    <td><%= rs.getString("CustomerName") %></td>
+    <td><%= rs.getString("Email") %></td>
+    <td><%= rs.getString("Phone") %></td>
+</tr>
+
+<%
+    }
+
+    rs.close();
+    stmt.close();
+    conn.close();
+
+} catch (Exception e) {
+%>
+
+<h2>Database connection failed</h2>
+<pre><%= e.toString() %></pre>
+
+<%
+}
+%>
+
+</table>
+
+</body>
+</html>
+
+
+PUT-YOUR-LEGACYAPP-PASSWORD-HERE
+
+C:\Program Files\Apache Software Foundation\Tomcat 11.0\webapps\legacyorders\WEB-INF\web.xml
+
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee
+                             https://jakarta.ee/xml/ns/jakartaee/web-app_6_0.xsd"
+         version="6.0">
+
+    <display-name>Legacy Orders</display-name>
+
+</web-app>
+
+Restart-Service Tomcat11
+
+Get-Service | Where-Object {$_.Name -like "*Tomcat*"}
+
+http://localhost:8080/legacyorders/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
