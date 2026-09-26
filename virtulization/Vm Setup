@@ -1,0 +1,357 @@
+=============
+
+Network arch:
+Router 192.168.8.1
+      |
+USB-C Ethernet
+      |
+Fedora br0
+   ├── Fedora host 192.168.8.x
+   └── OpenShift SNO 192.168.8.10
+
+192.168.8.10 console-openshift-console.apps.test-ocp.test.lab
+192.168.8.10 oauth-openshift.apps.test-ocp.test.lab
+192.168.8.10 api.test-ocp.test.lab
+192.168.8.10 api-int.test-ocp.test.lab
+192.168.8.10 cdi-uploadproxy-openshift-cnv.apps.test-ocp.test.lab
+192.168.8.10 hyperconverged-cluster-cli-download-openshift-cnv.apps.test-ocp.test.lab
+=============
+
+Install Fedora on a laptop
+sudo dnf update -y
+sudo dnf install -y \
+  @virtualization \
+  virt-manager \
+  libvirt \
+  libvirt-daemon-kvm \
+  qemu-kvm \
+  cockpit-machines
+
+sudo systemctl enable --now libvirtd
+sudo usermod -aG libvirt,kvm $USER
+sudo reboot
+
+virsh list --all
+lscpu | grep -i virtualization
+lscpu | egrep 'Model name|CPU\(s\)|Core|Thread|Virtualization'
+
+sudo mkdir -p /var/lib/libvirt/images/openshift-sno
+sudo chattr +C /var/lib/libvirt/images/openshift-sno
+lsattr -d /var/lib/libvirt/images/openshift-sno
+sudo truncate -s 300G /var/lib/libvirt/images/openshift-sno/rhcos-system.raw
+sudo truncate -s 350G /var/lib/libvirt/images/openshift-sno/vm-storage.raw
+
+ls -lh /var/lib/libvirt/images/openshift-sno/
+du -h /var/lib/libvirt/images/openshift-sno/*
+
+============
+Network:
+
+nmcli connection show
+
+sudo nmcli connection add type bridge ifname br0 con-name br0
+
+sudo nmcli connection modify br0 \
+  ipv4.method manual \
+  ipv4.addresses 192.168.8.11/24 \
+  ipv4.gateway 192.168.8.1 \
+  ipv4.dns 192.168.8.1 \
+  ipv6.method disabled \
+  connection.autoconnect yes
+
+sudo nmcli connection add \
+  type ethernet \
+  ifname enp0s20f0u3 \
+  con-name br0-port \
+  master br0 \
+  slave-type bridge
+
+sudo nmcli connection modify "Wired connection 1" connection.autoconnect no
+
+sudo nmcli connection down "Wired connection 1"
+sudo nmcli connection up br0
+sudo nmcli connection up br0-port
+
+ip -br addr
+
+ip route
+bridge link
+nmcli device status
+
+=============
+
+# Vm configuration
+virt-manager
+
+
+Installation method:
+Manual
+
+RAM:
+44 GiB
+= 45056 MiB
+
+vCPU:
+12
+
+CPU:
+host-passthrough
+
+System disk:
+Use existing:
+ /var/lib/libvirt/images/openshift-sno/rhcos-system.raw
+
+Second disk:
+ /var/lib/libvirt/images/openshift-sno/vm-storage.raw
+
+CD ROM:
+ISO <first get the mac id and then download the ISO we can create this later>
+
+Network:
+Virtual network 'default'
+NAT
+virbr0
+
+NIC model:
+virtio
+
+Disk bus:
+virtio
+
+Firmware:
+UEFI
+
+=============
+
+sudo chown user:user discovery_image_test-ocp.iso
+
+curl -L \
+  --retry 5 \
+  --retry-delay 3 \
+  -C - \
+  -o discovery_image_test-ocp.iso \
+  'YOUR_SAME_DISCOVERY_ISO_URL'
+
+  download windows 2022 server iso as well
+
+sudo virsh domblklist test-ocp
+
+vda   /var/lib/libvirt/images/openshift-sno/rhcos-system.raw
+vdb   /var/lib/libvirt/images/openshift-sno/vm-storage.raw
+sda   ...discovery ISO...
+
+
+virsh uri
+virsh -c qemu:///system list --all
+virsh -c qemu:///session list --all
+ps -ef | grep -E 'qemu|venky-ocp' | grep -v grep
+
+
+===========
+Hyperconverged - operator
+
+oc get ns openshift-cnv
+oc get csv -n openshift-cnv
+oc get hyperconverged -n openshift-cnv
+oc get pods -n openshift-cnv
+oc get crd | grep -i hostpath
+
+===========
+
+# Format second drive
+
+sudo mkfs.xfs /dev/vdb
+sudo mkdir -p /var/mnt/vm-storage
+sudo mount /dev/vdb /var/mnt/vm-storage
+
+sudo vi '/etc/systemd/system/var-mnt-vm\x2dstorage.mount'
+  [Unit]
+  Description=VM Storage
+  After=local-fs.target
+  
+  [Mount]
+  What=/dev/disk/by-uuid/e028c90e-2480-4a1f-995f-c84efb0947cc
+  Where=/var/mnt/vm-storage
+  Type=xfs
+  Options=defaults
+  
+  [Install]
+  WantedBy=multi-user.target
+#Replace the above UUID
+
+sudo systemctl daemon-reload
+sudo umount /var/mnt/vm-storage
+sudo systemctl enable --now 'var-mnt-vm\x2dstorage.mount'
+systemctl status 'var-mnt-vm\x2dstorage.mount' --no-pager
+findmnt /var/mnt/vm-storage
+/dev/vdb on /var/mnt/vm-storage type xfs
+
+==========
+
+Creating Storage Vol
+
+cat <<'EOF' > ~/hpp.yaml
+apiVersion: hostpathprovisioner.kubevirt.io/v1beta1
+kind: HostPathProvisioner
+metadata:
+  name: hostpath-provisioner
+  namespace: openshift-cnv
+spec:
+  imagePullPolicy: IfNotPresent
+  storagePools:
+  - name: vm-storage
+    path: /var/mnt/vm-storage
+  workload:
+    nodeSelector:
+      kubernetes.io/os: linux
+EOF
+oc apply -f ~/hpp.yaml
+
+oc get hostpathprovisioner -n openshift-cnv
+oc get pods -n openshift-cnv | grep -i hostpath
+
+cat <<'EOF' > ~/hpp-storageclass.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hpp-local
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+    storageclass.kubevirt.io/is-default-virt-class: "true"
+provisioner: kubevirt.io.hostpath-provisioner
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  storagePool: vm-storage
+EOF
+
+oc apply -f ~/hpp-storageclass.yaml
+oc get storageclass
+oc get hostpathprovisioner hostpath-provisioner -n openshift-cnv -o yaml
+
+
+================
+
+Test the stroage Class
+
+cat <<'EOF' > ~/test-vm.yaml
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: test-vm
+  namespace: vm-lab
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: test-vm
+    spec:
+      domain:
+        cpu:
+          cores: 2
+        resources:
+          requests:
+            memory: 2Gi
+        devices:
+          disks:
+          - name: rootdisk
+            disk:
+              bus: virtio
+          - name: cloudinitdisk
+            disk:
+              bus: virtio
+      volumes:
+      - name: rootdisk
+        containerDisk:
+          image: quay.io/containerdisks/fedora:latest
+      - name: cloudinitdisk
+        cloudInitNoCloud:
+          userData: |
+            #cloud-config
+            user: fedora
+            password: fedora
+            chpasswd:
+              expire: false
+EOF
+oc apply -f ~/test-vm.yaml
+oc get vm -n vm-lab
+oc describe vmi test-vm -n vm-lab
+oc get pods -n vm-lab
+virtctl console test-vm -n vm-lab
+
+user: fedora
+password: fedora
+
+#if you cannot find virtctl you can find it on the command line tool under the console. download the url.
+
+
+
+===========
+
+#VM images upload to hpp-local stroage class
+
+#on the fedora machine where we downloaded all iso, install oc from the console command line tools install virtctl.
+
+Fedora .11
+Windows ISO
+    |
+    | virtctl image-upload
+    v
+OpenShift CDI upload proxy
+    |
+    v
+PVC on hpp-local
+    |
+    v
+/dev/vdb -> /var/mnt/vm-storage
+oc login ............... #get the command from the console.
+oc whoami
+oc project vm-lab
+
+mkdir ..... below folder
+ls -lh ~/openshift-isos/
+oc get route cdi-uploadproxy -n openshift-cnv
+
+UPLOAD_HOST=$(oc get route cdi-uploadproxy -n openshift-cnv -o jsonpath='{.spec.host}')
+echo $UPLOAD_HOST
+getent hosts $UPLOAD_HOST
+
+
+ virtctl image-upload pvc windows-2022-iso \
+  --namespace=vm-lab \
+  --size=8Gi \
+  --image-path=/home/user/openshift-isos/windows_2022_server.iso \
+  --storage-class=hpp-local \
+  --access-mode=ReadWriteOnce \
+  --force-bind \
+  --uploadproxy-url=https://$UPLOAD_HOST \
+  --insecure
+
+#make sure the file name is correct.
+
+oc get pvc -n vm-lab -w
+oc get pvc windows-2022-iso -n vm-lab
+oc describe pvc windows-2022-iso -n vm-lab
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
