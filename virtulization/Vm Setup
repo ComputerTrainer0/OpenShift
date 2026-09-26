@@ -338,6 +338,7 @@ oc describe pvc windows-2022-iso -n vm-lab
 
 While creating this vm on the openshift console make sure you change the project name to vm-lab. by default it goes to default.
 
+Make sure the windows 2022 is mounted as a cdrom only the main drive is mounted as a disk
 
 
 
