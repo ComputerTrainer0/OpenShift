@@ -60,3 +60,17 @@ oc delete pod virt-launcher-windows-2022-webserver-xkhtf \
   -n default \
   --force \
   --grace-period=0
+
+
+virtctl
+
+virtctl stop windows-2022-webserver \
+  -n vm-lab \
+  --force \
+  --grace-period=0
+
+netsh interface ipv4 show subinterfaces
+netsh interface ipv4 set subinterface "Ethernet" mtu=1400 store=persistent
+ipconfig /flushdns
+
+
