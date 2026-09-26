@@ -1,0 +1,62 @@
+If something gets stuck
+
+Checks
+
+oc get pods -n default -o wide
+oc get vmi -n default
+oc get vm -n default
+oc get vmi -n default
+oc get dv,pvc -n default
+oc get vm,vmi,dv,pvc,pods -n default
+
+
+PVC
+
+oc patch pvc persistent-state-for-windows-2022-webserver-hrrfg \
+  -n default \
+  --type=merge \
+  -p '{"metadata":{"finalizers":[]}}'
+
+oc get pvc persistent-state-for-windows-2022-webserver-hrrfg \
+  -n default \
+  -o jsonpath='{.metadata.finalizers}{"\n"}'
+
+Instance
+
+oc delete vmi windows-2022-webserver -n default \
+  --force \
+  --grace-period=0
+
+oc patch vmi windows-2022-webserver -n default \
+  --type=merge \
+  -p '{"metadata":{"finalizers":[]}}'
+
+vm
+
+oc delete vm windows-2022-webserver -n default
+
+oc delete vmi windows-2022-webserver \
+  -n default \
+  --force \
+  --grace-period=0
+
+oc patch vm windows-2022-webserver -n default \
+  --type=merge \
+  -p '{"metadata":{"finalizers":[]}}'
+
+
+pod
+
+
+oc get pod virt-launcher-windows-2022-webserver-xkhtf \
+  -n default \
+  -o jsonpath='UID={.metadata.uid}{"\n"}FINALIZERS={.metadata.finalizers}{"\n"}DELETION={.metadata.deletionTimestamp}{"\n"}NODE={.spec.nodeName}{"\n"}'
+
+oc get pod virt-launcher-windows-2022-webserver-xkhtf \
+  -n default \
+  -o yaml | grep -A20 -B5 "persistent-state"
+
+oc delete pod virt-launcher-windows-2022-webserver-xkhtf \
+  -n default \
+  --force \
+  --grace-period=0
