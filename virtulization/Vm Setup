@@ -333,8 +333,10 @@ getent hosts $UPLOAD_HOST
 oc get pvc -n vm-lab -w
 oc get pvc windows-2022-iso -n vm-lab
 oc describe pvc windows-2022-iso -n vm-lab
+===========
 
 
+While creating this vm on the openshift console make sure you change the project name to vm-lab. by default it goes to default.
 
 
 
