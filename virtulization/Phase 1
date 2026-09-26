@@ -1,0 +1,124 @@
+windows-2022-webserver   → IIS ✅
+windows-2022-appserver   → Tomcat 11 ✅
+windows-2022-db          → SQL Server 2022 ✅
+windows-2022-smb         → File/SMB server being configured ✅
+
+                    Users
+                      |
+                      v
+          windows-2022-webserver
+                    IIS
+                      |
+                      | HTTP :8080
+                      v
+          windows-2022-appserver
+                 Tomcat 11
+                 /       \
+                /         \
+               v           v
+ windows-2022-db       windows-2022-smb
+ SQL Server 2022         SMB Share
+     :1433              \\server\share
+
+================================
+
+Setup Network for all systems
+
+oc project vm-lab
+virtctl expose vm windows-2022-appserver   --name=app01   --port=8080   --target-port=8080   --type=ClusterIP   -n vm-lab
+virtctl expose vm windows-2022-db   --name=db01   --port=1433   --target-port=1433   --type=ClusterIP   -n vm-lab
+virtctl expose vm windows-2022-smb   --name=file01   --port=445   --target-port=445   --type=ClusterIP   -n vm-lab
+virtctl expose vm windows-2022-webserver   --name=web01   --port=80   --target-port=80   --type=ClusterIP   -n vm-lab
+oc get svc -n vm-lab
+
+Tomcat:
+
+New-NetFirewallRule `
+  -DisplayName "Tomcat 8080" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 8080 `
+  -Action Allow
+
+Get-NetFirewallRule -DisplayName "Tomcat 8080"
+
+From IIS Server:
+Test-NetConnection localhost -Port 8080
+
+=================================
+New-NetFirewallRule `
+  -DisplayName "SQL Server 1433" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 1433 `
+  -Action Allow
+
+netstat -ano | findstr :1433
+
+New-NetFirewallRule `
+  -DisplayName "SMB 445" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 445 `
+  -Action Allow
+
+New-NetFirewallRule `
+  -DisplayName "IIS HTTP 80" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 80 `
+  -Action Allow
+
+New-NetFirewallRule `
+  -DisplayName "Tomcat 8080" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 8080 `
+  -Action Allow
+
+Test-NetConnection app01.vm-lab.svc.cluster.local -Port 8080
+Test-NetConnection db01.vm-lab.svc.cluster.local -Port 1433
+Test-NetConnection file01.vm-lab.svc.cluster.local -Port 445
+Test-NetConnection web01.vm-lab.svc.cluster.local -Port 80
+
+
+=================================
+
+
+                    WEB01
+                     IIS
+                      |
+                      | TCP 8080
+                      v
+                    APP01
+                   Tomcat
+                  /      \
+                 /        \
+       TCP 1433 /          \ TCP 445
+               v            v
+             DB01         FILE01
+          SQL Server     SMB Share
+                         LegacyData
+
+=================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
