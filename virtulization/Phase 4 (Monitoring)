@@ -1,0 +1,252 @@
+Download and install windows_exporter download from github as executable.
+
+IIS VM ───────┐
+Tomcat VM ────┤
+SQL VM ───────┼─> Windows Exporter :9182
+SMB VM ───────┘          |
+                         v
+                  OpenShift Service
+                         |
+                         v
+                   ServiceMonitor
+                         |
+                         v
+               OpenShift Prometheus
+
+
+New-NetFirewallRule `
+  -DisplayName "Windows Exporter 9182" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 9182 `
+  -Action Allow
+
+
+Allow on all pc
+
+Create monitoring config service
+
+oc create configmap cluster-monitoring-config \
+  -n openshift-monitoring \
+  --from-literal=config.yaml='enableUserWorkload: true'
+
+
+oc get configmap cluster-monitoring-config \
+  -n openshift-monitoring \
+  -o yaml
+
+oc get pods -n openshift-user-workload-monitoring
+
+
+
+cat > web01-servicemonitor.yaml <<'EOF'
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: web01-windows-exporter
+  namespace: vm-lab
+spec:
+  selector:
+    matchLabels:
+      app: web01-metrics
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+EOF
+
+oc label svc web01-metrics \
+  app=web01-metrics \
+  -n vm-lab \
+  --overwrite
+
+oc patch svc web01-metrics \
+  -n vm-lab \
+  --type='json' \
+  -p='[
+    {
+      "op":"replace",
+      "path":"/spec/ports/0/name",
+      "value":"metrics"
+    }
+  ]'
+
+oc get svc web01-metrics -n vm-lab -o yaml
+
+oc apply -f web01-servicemonitor.yaml
+
+app01  Tomcat VM
+db01   SQL Server VM
+file01 SMB VM
+
+Test
+
+oc exec -n openshift-user-workload-monitoring \
+  prometheus-user-workload-0 \
+  -c prometheus -- \
+  wget -qO- 'http://localhost:9090/api/v1/query?query=up'
+
+oc exec -n openshift-user-workload-monitoring \
+  prometheus-user-workload-0 \
+  -c prometheus -- \
+  wget -qO- 'http://localhost:9090/api/v1/query?query=windows_os_info'
+
+
+===============
+
+virtctl expose vm windows-2022-appserver \
+  --name=app01-metrics \
+  --port=9182 \
+  --target-port=9182 \
+  --type=ClusterIP \
+  -n vm-lab
+
+virtctl expose vm windows-2022-db \
+  --name=db01-metrics \
+  --port=9182 \
+  --target-port=9182 \
+  --type=ClusterIP \
+  -n vm-lab
+
+virtctl expose vm windows-2022-smb \
+  --name=file01-metrics \
+  --port=9182 \
+  --target-port=9182 \
+  --type=ClusterIP \
+  -n vm-lab
+
+
+===================
+
+oc label svc app01-metrics \
+  app=app01-metrics \
+  -n vm-lab \
+  --overwrite
+
+oc patch svc app01-metrics \
+  -n vm-lab \
+  --type='json' \
+  -p='[
+    {
+      "op":"replace",
+      "path":"/spec/ports/0/name",
+      "value":"metrics"
+    }
+  ]'
+
+cat > app01-servicemonitor.yaml <<'EOF'
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: app01-windows-exporter
+  namespace: vm-lab
+spec:
+  selector:
+    matchLabels:
+      app: app01-metrics
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+EOF
+
+oc apply -f app01-servicemonitor.yaml
+oc get svc app01-metrics -n vm-lab
+
+============================
+DB
+
+oc label svc db01-metrics \
+  app=db01-metrics \
+  -n vm-lab \
+  --overwrite
+
+oc patch svc db01-metrics \
+  -n vm-lab \
+  --type='json' \
+  -p='[
+    {
+      "op":"replace",
+      "path":"/spec/ports/0/name",
+      "value":"metrics"
+    }
+  ]'
+
+
+
+
+
+
+============================
+SMB
+
+oc label svc file01-metrics \
+  app=file01-metrics \
+  -n vm-lab \
+  --overwrite
+
+oc patch svc file01-metrics \
+  -n vm-lab \
+  --type='json' \
+  -p='[
+    {
+      "op":"replace",
+      "path":"/spec/ports/0/name",
+      "value":"metrics"
+    }
+  ]'
+
+
+
+cat > db-smb-servicemonitors.yaml <<'EOF'
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: db01-windows-exporter
+  namespace: vm-lab
+spec:
+  selector:
+    matchLabels:
+      app: db01-metrics
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: file01-windows-exporter
+  namespace: vm-lab
+spec:
+  selector:
+    matchLabels:
+      app: file01-metrics
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+EOF
+
+oc apply -f db-smb-servicemonitors.yaml
+
+oc get servicemonitor -n vm-lab
+
+
+oc get svc -n vm-lab | grep metrics
+
+
+===========================
+test
+
+oc exec -n openshift-user-workload-monitoring \
+  prometheus-user-workload-0 \
+  -c prometheus -- \
+  wget -qO- 'http://localhost:9090/api/v1/query?query=windows_os_info'
+
+
+oc exec -n openshift-user-workload-monitoring \
+  prometheus-user-workload-0 \
+  -c prometheus -- \
+  wget -qO- 'http://localhost:9090/api/v1/query?query=count(up{namespace="vm-lab"}==1)'
+
