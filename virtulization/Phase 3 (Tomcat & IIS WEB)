@@ -1,0 +1,844 @@
+Tomcat Rest of the configuration:
+===============================
+create-order.jsp
+<%@ page import="java.sql.*" %>
+<%@ page import="java.nio.file.*" %>
+<%@ page import="java.nio.charset.StandardCharsets" %>
+<%@ page import="java.math.BigDecimal" %>
+<%@ page import="java.time.LocalDateTime" %>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create Order</title>
+</head>
+
+<body>
+
+<h1>Legacy Order Management</h1>
+
+<p>
+    <a href="index.jsp">Customers</a> |
+    <a href="orders.jsp">Orders</a> |
+    <a href="create-order.jsp">Create Order</a>
+</p>
+
+<h2>Create New Order</h2>
+
+<%
+String dbUrl =
+    "jdbc:sqlserver://db01.vm-lab.svc.cluster.local:1433;" +
+    "databaseName=LegacyOrders;" +
+    "encrypt=true;" +
+    "trustServerCertificate=true;";
+
+String dbUser = "legacyapp";
+String dbPassword = "R3dCloud!Sql#2026$Lab9";
+
+/*
+ * SMB File Server
+ *
+ * Actual destination:
+ * \\file01.vm-lab.svc.cluster.local\LegacyData\Invoices
+ */
+String invoiceDirectory =
+    "\\\\file01.vm-lab.svc.cluster.local\\LegacyData\\Invoices";
+
+String message = "";
+boolean success = false;
+
+if ("POST".equalsIgnoreCase(request.getMethod())) {
+
+    String customerIdText = request.getParameter("customerId");
+    String totalAmountText = request.getParameter("totalAmount");
+
+    Connection conn = null;
+
+    try {
+
+        int customerId = Integer.parseInt(customerIdText);
+        BigDecimal totalAmount =
+            new BigDecimal(totalAmountText);
+
+        Class.forName(
+            "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+        );
+
+        conn = DriverManager.getConnection(
+            dbUrl,
+            dbUser,
+            dbPassword
+        );
+
+        /*
+         * ------------------------------------------------
+         * 1. Find customer name
+         * ------------------------------------------------
+         */
+
+        String customerName = "";
+
+        String customerSql =
+            "SELECT CustomerName " +
+            "FROM Customers " +
+            "WHERE CustomerID = ?";
+
+        PreparedStatement customerPs =
+            conn.prepareStatement(customerSql);
+
+        customerPs.setInt(1, customerId);
+
+        ResultSet customerRs =
+            customerPs.executeQuery();
+
+        if (customerRs.next()) {
+
+            customerName =
+                customerRs.getString("CustomerName");
+
+        } else {
+
+            throw new Exception(
+                "Customer ID does not exist."
+            );
+        }
+
+        customerRs.close();
+        customerPs.close();
+
+
+        /*
+         * ------------------------------------------------
+         * 2. Insert order
+         * ------------------------------------------------
+         */
+
+        String insertSql =
+            "INSERT INTO Orders " +
+            "(CustomerID, Status, TotalAmount) " +
+            "VALUES (?, 'NEW', ?)";
+
+        PreparedStatement insertPs =
+            conn.prepareStatement(
+                insertSql,
+                Statement.RETURN_GENERATED_KEYS
+            );
+
+        insertPs.setInt(
+            1,
+            customerId
+        );
+
+        insertPs.setBigDecimal(
+            2,
+            totalAmount
+        );
+
+        int rows =
+            insertPs.executeUpdate();
+
+        if (rows != 1) {
+
+            throw new Exception(
+                "Order insert failed."
+            );
+        }
+
+
+        /*
+         * ------------------------------------------------
+         * 3. Get generated OrderID
+         * ------------------------------------------------
+         */
+
+        ResultSet generatedKeys =
+            insertPs.getGeneratedKeys();
+
+        int orderId;
+
+        if (generatedKeys.next()) {
+
+            orderId =
+                generatedKeys.getInt(1);
+
+        } else {
+
+            throw new Exception(
+                "Unable to retrieve new Order ID."
+            );
+        }
+
+        generatedKeys.close();
+        insertPs.close();
+
+
+        /*
+         * ------------------------------------------------
+         * 4. Generate invoice
+         * ------------------------------------------------
+         */
+
+        String invoiceFileName =
+            "invoice-" + orderId + ".txt";
+
+        Path invoiceFolder =
+            Paths.get(invoiceDirectory);
+
+        Path invoiceFile =
+            invoiceFolder.resolve(
+                invoiceFileName
+            );
+
+        String invoiceContent =
+            "========================================\r\n" +
+            "       LEGACY ORDER MANAGEMENT\r\n" +
+            "========================================\r\n" +
+            "\r\n" +
+            "Invoice / Order ID : " + orderId + "\r\n" +
+            "Customer           : " + customerName + "\r\n" +
+            "Customer ID        : " + customerId + "\r\n" +
+            "Order Status       : NEW\r\n" +
+            "Total Amount       : GBP " + totalAmount + "\r\n" +
+            "Created            : " + LocalDateTime.now() + "\r\n" +
+            "\r\n" +
+            "Generated by LegacyOrders Tomcat Application\r\n" +
+            "\r\n" +
+            "========================================\r\n";
+
+        /*
+         * Creates folder if necessary.
+         */
+        Files.createDirectories(
+            invoiceFolder
+        );
+
+        /*
+         * Write invoice.
+         */
+        Files.writeString(
+            invoiceFile,
+            invoiceContent,
+            StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING
+        );
+
+
+        /*
+         * ------------------------------------------------
+         * 5. Update Orders table with invoice location
+         * ------------------------------------------------
+         */
+
+        String invoicePath =
+            invoiceFile.toString();
+
+        String updateSql =
+            "UPDATE Orders " +
+            "SET InvoicePath = ? " +
+            "WHERE OrderID = ?";
+
+        PreparedStatement updatePs =
+            conn.prepareStatement(updateSql);
+
+        updatePs.setString(
+            1,
+            invoicePath
+        );
+
+        updatePs.setInt(
+            2,
+            orderId
+        );
+
+        updatePs.executeUpdate();
+
+        updatePs.close();
+
+
+        /*
+         * ------------------------------------------------
+         * 6. Write AuditLog entry
+         * ------------------------------------------------
+         */
+
+        String auditSql =
+            "INSERT INTO AuditLog " +
+            "(EventType, Description) " +
+            "VALUES (?, ?)";
+
+        PreparedStatement auditPs =
+            conn.prepareStatement(auditSql);
+
+        auditPs.setString(
+            1,
+            "ORDER_CREATED"
+        );
+
+        auditPs.setString(
+            2,
+            "Order " + orderId +
+            " created for " +
+            customerName +
+            ". Invoice: " +
+            invoicePath
+        );
+
+        auditPs.executeUpdate();
+
+        auditPs.close();
+
+
+        /*
+         * ------------------------------------------------
+         * SUCCESS
+         * ------------------------------------------------
+         */
+
+        success = true;
+
+        message =
+            "Order " +
+            orderId +
+            " created successfully. " +
+            "Invoice generated: " +
+            invoiceFileName;
+
+
+    } catch (Exception e) {
+
+        message =
+            "ERROR: " +
+            e.toString();
+
+    } finally {
+
+        try {
+
+            if (conn != null) {
+                conn.close();
+            }
+
+        } catch (Exception ignore) {
+        }
+
+    }
+}
+%>
+
+
+<% if (!message.isEmpty()) { %>
+
+    <% if (success) { %>
+
+        <p>
+            <strong>
+                SUCCESS:
+                <%= message %>
+            </strong>
+        </p>
+
+    <% } else { %>
+
+        <p>
+            <strong>
+                <%= message %>
+            </strong>
+        </p>
+
+    <% } %>
+
+<% } %>
+
+
+<form method="post">
+
+    <label>
+        Customer:
+    </label>
+
+    <select
+        name="customerId"
+        required
+    >
+
+        <option value="1">
+            Contoso Manufacturing
+        </option>
+
+        <option value="2">
+            Northwind Trading
+        </option>
+
+        <option value="3">
+            Fabrikam Industries
+        </option>
+
+    </select>
+
+    <br><br>
+
+
+    <label>
+        Total Amount:
+    </label>
+
+    <input
+        type="number"
+        name="totalAmount"
+        step="0.01"
+        min="0.01"
+        required
+    >
+
+    <br><br>
+
+
+    <button type="submit">
+        Create Order
+    </button>
+
+</form>
+
+
+<br>
+
+<p>
+    <a href="orders.jsp">
+        View All Orders
+    </a>
+</p>
+
+
+</body>
+</html>
+
+
+
+===============================
+index.jsp
+<%@ page import="java.sql.*" %>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Legacy Orders</title>
+</head>
+<body>
+
+<h1>Legacy Order Management</h1>
+
+
+<p>
+    <a href="index.jsp">Customers</a> |
+    <a href="orders.jsp">Orders</a> |
+    <a href="create-order.jsp">Create Order</a>
+</p>
+
+
+<%
+String url =
+    "jdbc:sqlserver://db01.vm-lab.svc.cluster.local:1433;" +
+    "databaseName=LegacyOrders;" +
+    "encrypt=true;" +
+    "trustServerCertificate=true;";
+
+String user = "legacyapp";
+String password = "R3dCloud!Sql#2026$Lab9";
+
+try {
+    Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+
+    Connection conn = DriverManager.getConnection(url, user, password);
+
+    Statement stmt = conn.createStatement();
+
+    ResultSet rs = stmt.executeQuery(
+        "SELECT CustomerID, CustomerName, Email, Phone FROM Customers"
+    );
+%>
+
+<h2>Customers</h2>
+
+<table border="1" cellpadding="8">
+<tr>
+    <th>ID</th>
+    <th>Name</th>
+    <th>Email</th>
+    <th>Phone</th>
+</tr>
+
+<%
+    while (rs.next()) {
+%>
+
+<tr>
+    <td><%= rs.getInt("CustomerID") %></td>
+    <td><%= rs.getString("CustomerName") %></td>
+    <td><%= rs.getString("Email") %></td>
+    <td><%= rs.getString("Phone") %></td>
+</tr>
+
+<%
+    }
+
+    rs.close();
+    stmt.close();
+    conn.close();
+
+} catch (Exception e) {
+%>
+
+<h2>Database connection failed</h2>
+<pre><%= e.toString() %></pre>
+
+<%
+}
+%>
+
+</table>
+
+</body>
+</html>
+
+
+===============================
+orders.jsp
+
+<%@ page import="java.sql.*" %>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Legacy Orders</title>
+</head>
+<body>
+
+<h1>Legacy Order Management</h1>
+
+<p>
+    <a href="index.jsp">Customers</a> |
+    <a href="orders.jsp">Orders</a> |
+    <a href="create-order.jsp">Create Order</a>
+</p>
+
+<%
+String url =
+    "jdbc:sqlserver://db01.vm-lab.svc.cluster.local:1433;" +
+    "databaseName=LegacyOrders;" +
+    "encrypt=true;" +
+    "trustServerCertificate=true;";
+
+String user = "legacyapp";
+String password = "R3dCloud!Sql#2026$Lab9";
+
+try {
+    Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+
+    Connection conn = DriverManager.getConnection(url, user, password);
+
+    String sql =
+        "SELECT " +
+        "o.OrderID, " +
+        "c.CustomerName, " +
+        "o.OrderDate, " +
+        "o.Status, " +
+        "o.TotalAmount " +
+        "FROM Orders o " +
+        "INNER JOIN Customers c " +
+        "ON o.CustomerID = c.CustomerID " +
+        "ORDER BY o.OrderID";
+
+    Statement stmt = conn.createStatement();
+    ResultSet rs = stmt.executeQuery(sql);
+%>
+
+<h2>Orders</h2>
+
+<table border="1" cellpadding="8">
+<tr>
+    <th>Order ID</th>
+    <th>Customer</th>
+    <th>Order Date</th>
+    <th>Status</th>
+    <th>Total Amount</th>
+</tr>
+
+<%
+    while (rs.next()) {
+%>
+
+<tr>
+    <td><%= rs.getInt("OrderID") %></td>
+    <td><%= rs.getString("CustomerName") %></td>
+    <td><%= rs.getTimestamp("OrderDate") %></td>
+    <td><%= rs.getString("Status") %></td>
+    <td>£<%= rs.getBigDecimal("TotalAmount") %></td>
+</tr>
+
+<%
+    }
+
+    rs.close();
+    stmt.close();
+    conn.close();
+
+} catch (Exception e) {
+%>
+
+<h2>Database connection failed</h2>
+<pre><%= e.toString() %></pre>
+
+<%
+}
+%>
+
+</table>
+
+</body>
+</html>
+
+
+
+===============================
+
+
+files uploaded invoce.
+
+
+Tomcat Service
+.\legacyfiles
+     |
+     | same username/password
+     v
+File Server
+legacyfiles
+     |
+     +--> Share permission: Change
+     +--> NTFS permission: Modify
+
+
+Samba server:
+
+net user legacyfiles "Strong-Lab-Password#2026" /add
+icacls "C:\Shares\LegacyData" /grant legacyfiles:(OI)(CI)M /T
+Grant-SmbShareAccess `
+  -Name "LegacyData" `
+  -AccountName "legacyfiles" `
+  -AccessRight Change `
+  -Force
+Get-SmbShareAccess -Name "LegacyData"
+
+Tomcat server:
+
+net user legacyfiles "Strong-Lab-Password#2026" /add
+icacls "C:\Program Files\Apache Software Foundation\Tomcat 11.0" `
+ /grant "legacyfiles:(OI)(CI)M" /T
+icacls "C:\Program Files\Java" `
+ /grant "legacyfiles:(OI)(CI)RX" /T
+Restart-Service Tomcat11
+Test-Path "\\file01.vm-lab.svc.cluster.local\LegacyData\Invoices"
+New-Item `
+"\\file01.vm-lab.svc.cluster.local\LegacyData\Invoices\tomcat-test.txt" `
+-ItemType File
+Remove-Item "\\file01.vm-lab.svc.cluster.local\LegacyData\Invoices\tomcat-test.txt"
+
+
+http://localhost/
+        |
+        v
+   IIS landing page
+        |
+        +--> Customers
+        +--> Orders
+        +--> Create Order
+                |
+                v
+       /legacyorders/*
+                |
+          IIS reverse proxy
+                |
+                v
+     Tomcat app01:8080
+
+             Users
+               |
+               | HTTP :80
+               v
+        +---------------+
+        |   IIS VM      |
+        |   web01       |
+        +-------+-------+
+                |
+                | HTTP :8080
+                v
+        +---------------+
+        |  Tomcat VM    |
+        |   app01       |
+        +------+--------+
+               |
+          +----+----------------+
+          |                     |
+          | JDBC :1433          | SMB :445
+          v                     v
+   +-------------+       +--------------+
+   | SQL Server  |       | File Server  |
+   |    db01     |       |    file01    |
+   +-------------+       +--------------+
+
+http://web01/legacyorders/
+        |
+        v
+http://app01.vm-lab.svc.cluster.local:8080/legacyorders/
+
+
+
+Download and install 
+
+IIS URL Rewrite
+Application Request Routing (ARR)
+
+Request URL -> Matches the pattern.
+Using -> Regular Expressions
+Pattern -> ^legacyorders/(.*)
+
+Action -> Rewrite
+http://app01.vm-lab.svc.cluster.local:8080/legacyorders/{R:1}
+
+
+index.html
+
+========
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Legacy Order Management Portal</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background: #f4f6f8;
+        }
+
+        .header {
+            background: #1f3b5b;
+            color: white;
+            padding: 35px;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 36px;
+        }
+
+        .header p {
+            font-size: 18px;
+        }
+
+        .banner {
+            text-align: center;
+            padding: 35px;
+            font-size: 80px;
+        }
+
+        .container {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .card {
+            display: inline-block;
+            width: 220px;
+            margin: 15px;
+            padding: 25px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px #aaa;
+        }
+
+        .card h2 {
+            color: #1f3b5b;
+        }
+
+        .button {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 12px 22px;
+            background: #1f3b5b;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+
+        .footer {
+            margin-top: 50px;
+            text-align: center;
+            color: #666;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="header">
+    <h1>Legacy Order Management</h1>
+    <p>Enterprise Order Processing Portal</p>
+</div>
+
+<div class="banner">
+    🏭 🖥️ 📦
+</div>
+
+<div class="container">
+
+    <div class="card">
+        <h2>Customers</h2>
+        <p>View registered customers.</p>
+
+        <a class="button"
+           href="/legacyorders/">
+            View Customers
+        </a>
+    </div>
+
+
+    <div class="card">
+        <h2>Orders</h2>
+        <p>View existing customer orders.</p>
+
+        <a class="button"
+           href="/legacyorders/orders.jsp">
+            View Orders
+        </a>
+    </div>
+
+
+    <div class="card">
+        <h2>Create Order</h2>
+        <p>Create a new customer order.</p>
+
+        <a class="button"
+           href="/legacyorders/create-order.jsp">
+            New Order
+        </a>
+    </div>
+
+</div>
+
+
+<div class="footer">
+
+    <p>
+        Legacy Order Management System
+    </p>
+
+    <p>
+        IIS → Tomcat → SQL Server → SMB
+    </p>
+
+</div>
+
+</body>
+</html>
+
+========
