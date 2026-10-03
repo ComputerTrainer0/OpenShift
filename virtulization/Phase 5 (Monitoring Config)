@@ -1,0 +1,755 @@
+
+
+Dash board
+
+LEGACY PLATFORM HEALTH
+
+┌──────────────────────────────────────────────┐
+│ WEB01     APP01      DB01       FILE01       │
+│   UP        UP         UP          UP         │
+├──────────────────────────────────────────────┤
+│ CPU %                                        │
+├──────────────────────────────────────────────┤
+│ Memory %                                     │
+├──────────────────────────────────────────────┤
+│ Disk Usage %                                 │
+├──────────────────────────────────────────────┤
+│ Network RX / TX                              │
+├──────────────────────────────────────────────┤
+│ IIS | Tomcat | SQL Server | SMB service      │
+└──────────────────────────────────────────────┘
+
+
+==================
+
+First install the operator. Since you’re on OpenShift 4.22:
+OpenShift Console
+→ Ecosystem
+→ Software Catalog
+
+Search for:
+Cluster Observability Operator
+
+Install it with:
+Channel: stable
+Installation mode: All namespaces
+Namespace: openshift-cluster-observability-operator
+Update approval: Automatic
+
+==================
+create datasource for prometheus configuration.
+oc create serviceaccount perses-sa -n vm-lab
+Grant it monitoring read access:
+oc adm policy add-cluster-role-to-user \
+  cluster-monitoring-view \
+  -z perses-sa \
+  -n vm-lab
+Create a token:
+TOKEN=$(oc create token perses-sa \
+  -n vm-lab \
+  --duration=8760h)
+
+Create/update the datasource secret:
+oc create secret generic prometheus-datasource-secret \
+  -n vm-lab \
+  --from-literal=Authorization="Bearer ${TOKEN}" \
+  --dry-run=client -o yaml | oc apply -f -
+
+Now create the datasource:
+oc apply -f - <<'EOF'
+apiVersion: perses.dev/v1alpha2
+kind: PersesDatasource
+metadata:
+  name: prometheus-datasource
+  namespace: vm-lab
+spec:
+  config:
+    display:
+      name: "OpenShift Thanos Querier"
+    default: true
+    plugin:
+      kind: PrometheusDatasource
+      spec:
+        proxy:
+          kind: HTTPProxy
+          spec:
+            url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
+            secret: prometheus-datasource-secret
+  client:
+    tls:
+      enable: true
+      caCert:
+        type: file
+        certPath: /ca/service-ca.crt
+EOF
+
+Then verify:
+oc get persesdatasource -n vm-lab
+
+==================
+Tomcat: JVM heap used/max, GC, threads, request rate
+IIS: total requests, 403/404/5xx, current requests, app pool state
+SQL Server: blocked processes, active transactions, deadlocks, lock waits, log usage
+File Server: disk read/write throughput, IOPS, queue depth, open SMB files/connections
+
+======================
+Basic monitoring
+======================
+
+Now add the CPU Usage % panel.
+Click:
++ Panel
+
+Set:
+Name: CPU Usage %
+Type: Time Series Chart
+Group: Panel Group
+
+Use this PromQL:
+100 - (
+  avg by (service) (
+    rate(
+      windows_cpu_time_total{
+        namespace="vm-lab",
+        service=~"(web01|app01|db01|file01)-metrics",
+        mode="idle"
+      }[5m]
+    )
+  ) * 100
+)
+
+======================
+Next, add Memory Usage %.
+Click:
++ Panel
+
+Set:
+Name: Memory Usage %
+Type: Time Series Chart
+Group: Panel Group
+
+Use this PromQL:
+100 *
+(
+  1 -
+  (
+    windows_memory_available_bytes{
+      namespace="vm-lab",
+      service=~"(web01|app01|db01|file01)-metrics"
+    }
+    /
+    windows_os_visible_memory_bytes{
+      namespace="vm-lab",
+      service=~"(web01|app01|db01|file01)-metrics"
+    }
+  )
+)
+
+Legend:
+{{service}}
+
+Settings:
+Unit: Percent
+Min: 0
+Max: 100
+
+You should get four lines again:
+web01-metrics
+app01-metrics
+db01-metrics
+file01-metrics
+======================
+After that, add Disk Usage % with:
+100 *
+(
+  1 -
+  (
+    windows_logical_disk_free_bytes{
+      namespace="vm-lab",
+      service=~"(web01|app01|db01|file01)-metrics",
+      volume="C:"
+    }
+    /
+    windows_logical_disk_size_bytes{
+      namespace="vm-lab",
+      service=~"(web01|app01|db01|file01)-metrics",
+      volume="C:"
+    }
+  )
+)
+
+Use the same legend and percent settings.
+======================
+Next, add the Network Traffic panel.
+Click:
++ Panel
+
+Set:
+Name: Network RX / TX
+Type: Time Series Chart
+Group: Panel Group
+
+Use two queries in the same panel.
+Query A — Receive:
+sum by (service) (
+  rate(
+    windows_net_bytes_received_total{
+      namespace="vm-lab",
+      service=~"(web01|app01|db01|file01)-metrics"
+    }[5m]
+  )
+)
+
+Legend:
+{{service}} RX
+
+Then click Add Query.
+Query B — Transmit:
+sum by (service) (
+  rate(
+    windows_net_bytes_transmitted_total{
+      namespace="vm-lab",
+      service=~"(web01|app01|db01|file01)-metrics"
+    }[5m]
+  )
+)
+
+======================
+Create a new Stat Chart panel:
+Name: Application Service Health
+
+Use these four queries in the same panel.
+For IIS on web01:
+windows_service_state{
+  namespace="vm-lab",
+  service="web01-metrics",
+  name="W3SVC",
+  state="running"
+}
+
+For Tomcat on app01:
+windows_service_state{
+  namespace="vm-lab",
+  service="app01-metrics",
+  name="Tomcat11",
+  state="running"
+}
+
+For SQL Server on db01:
+windows_service_state{
+  namespace="vm-lab",
+  service="db01-metrics",
+  name="MSSQLSERVER",
+  state="running"
+}
+
+For SMB/File Server, use the Windows Server service:
+windows_service_state{
+  namespace="vm-lab",
+  service="file01-metrics",
+  name="LanmanServer",
+  state="running"
+}
+
+windows_exporter exposes windows_service_state with name and state labels, where the current state has value 1
+
+======================
+
+
+======================
+1. IIS — enable IIS metrics
+On the WEB01 VM, first check the exporter service command/config:
+Get-CimInstance Win32_Service -Filter "Name='windows_exporter'" |
+Select-Object Name,PathName
+
+Then open:
+C:\Program Files\windows_exporter\config.yaml
+
+Make the collectors line include iis:
+collectors:
+  enabled: "[defaults],iis"
+
+Restart:
+Restart-Service windows_exporter
+
+Verify:
+Invoke-WebRequest http://localhost:9182/metrics -UseBasicParsing |
+Select-String "windows_iis"
+
+The IIS collector exposes things including total requests, 404s, current worker requests, and error counts by HTTP status code. GitHub
+Then your Perses queries can be:
+Request rate
+sum(rate(windows_iis_requests_total{
+  namespace="vm-lab",
+  service="web01-metrics"
+}[5m]))
+
+404 rate
+sum(rate(windows_iis_not_found_errors_total{
+  namespace="vm-lab",
+  service="web01-metrics"
+}[5m]))
+
+403 rate
+sum(rate(windows_iis_worker_request_errors_total{
+  namespace="vm-lab",
+  service="web01-metrics",
+  status_code="403"
+}[5m]))
+
+5xx rate
+sum(rate(windows_iis_worker_request_errors_total{
+  namespace="vm-lab",
+  service="web01-metrics",
+  status_code=~"5.."
+}[5m]))
+
+2. SQL Server — blocked/hung activity
+On DB01, enable the MSSQL collector:
+collectors:
+  enabled: "[defaults],mssql"
+
+Restart:
+Restart-Service windows_exporter
+
+Verify:
+Invoke-WebRequest http://localhost:9182/metrics -UseBasicParsing |
+Select-String "windows_mssql"
+
+Windows Exporter’s MSSQL collector includes blocked processes, active transactions, lock waits, deadlocks and database log usage. GitHub
+Useful panels:
+Blocked processes
+windows_mssql_genstats_blocked_processes{
+  namespace="vm-lab",
+  service="db01-metrics"
+}
+
+Active transactions — LegacyOrders
+windows_mssql_databases_active_transactions{
+  namespace="vm-lab",
+  service="db01-metrics",
+  database="LegacyOrders"
+}
+
+Deadlocks
+sum(rate(windows_mssql_locks_deadlocks{
+  namespace="vm-lab",
+  service="db01-metrics"
+}[5m]))
+
+Lock waits
+sum(rate(windows_mssql_locks_lock_waits{
+  namespace="vm-lab",
+  service="db01-metrics"
+}[5m]))
+
+For a true “transaction running > 60 seconds” panel, Windows performance counters are not enough. Later we can add a small SQL exporter query against SQL Server DMVs to expose long-running/blocked sessions directly.
+3. File Server — disk read/write
+This part is already available from your existing exporter because logical_disk is enabled by default. GitHub
+Read throughput
+rate(windows_logical_disk_read_bytes_total{
+  namespace="vm-lab",
+  service="file01-metrics",
+  volume="C:"
+}[5m])
+
+Write throughput
+rate(windows_logical_disk_write_bytes_total{
+  namespace="vm-lab",
+  service="file01-metrics",
+  volume="C:"
+}[5m])
+
+Set unit to:
+Bytes/sec
+
+Read IOPS
+rate(windows_logical_disk_reads_total{
+  namespace="vm-lab",
+  service="file01-metrics",
+  volume="C:"
+}[5m])
+
+Write IOPS
+rate(windows_logical_disk_writes_total{
+  namespace="vm-lab",
+  service="file01-metrics",
+  volume="C:"
+}[5m])
+
+Disk queue
+windows_logical_disk_requests_queued{
+  namespace="vm-lab",
+  service="file01-metrics",
+  volume="C:"
+}
+
+We can additionally enable the smb collector for SMB-specific activity such as open files and client/tree connections. GitHub
+4. Tomcat — JVM heap
+For Tomcat, windows_exporter cannot give us JVM heap/GC details. We need the Prometheus JMX Exporter Java agent inside Tomcat. Prometheus recommends the Java-agent mode, and it exposes metrics over another HTTP port such as 9404. Prometheus
+The flow will become:
+Tomcat JVM
+   |
+   +--> JMX Exporter :9404
+              |
+              v
+       app01-jmx Service
+              |
+              v
+        ServiceMonitor
+              |
+              v
+         Prometheus
+
+
+============================
+
+Get tomcat to expose jmx values
+
+& "C:\Program Files\Apache Software Foundation\Tomcat 11.0\bin\tomcat11w.exe" //ES//Tomcat11
+Go to java
+-javaagent:C:\Monitoring\jmx_exporter\jmx_prometheus_javaagent-1.6.0.jar=9404:C:\Monitoring\jmx_exporter\config.yaml
+Apply
+Ok
+Restart-Service Tomcat11
+Test-NetConnection localhost -Port 9404
+New-NetFirewallRule -DisplayName "Tomcat JMX Exporter 9404" -Direction Inbound -Protocol TCP -LocalPort 9404 -Action Allow
+============================
+oc level
+virtctl expose vm windows-2022-appserver \
+  --name=app01-jmx \
+  --port=9404 \
+  --target-port=9404 \
+  --type=ClusterIP \
+  -n vm-lab
+
+oc label svc app01-jmx \
+  app=app01-jmx \
+  -n vm-lab \
+  --overwrite
+
+oc patch svc app01-jmx \
+  -n vm-lab \
+  --type='json' \
+  -p='[
+    {
+      "op":"replace",
+      "path":"/spec/ports/0/name",
+      "value":"jmx"
+    }
+  ]'
+
+oc run curl-jmx \
+  -n vm-lab \
+  --image=curlimages/curl \
+  --restart=Never \
+  --rm -it \
+  -- curl -s http://app01-jmx:9404/metrics | head
+
+cat > app01-jmx-servicemonitor.yaml <<'EOF'
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: app01-tomcat-jmx
+  namespace: vm-lab
+spec:
+  selector:
+    matchLabels:
+      app: app01-jmx
+  endpoints:
+  - port: jmx
+    path: /metrics
+    interval: 30s
+EOF
+
+oc apply -f app01-jmx-servicemonitor.yaml
+oc get svc app01-jmx -n vm-lab
+oc get servicemonitor app01-tomcat-jmx -n vm-lab
+
+test
+
+oc exec -n openshift-user-workload-monitoring \
+  prometheus-user-workload-0 \
+  -c prometheus -- \
+  wget -qO- 'http://localhost:9090/api/v1/query?query=up{service="app01-jmx"}'
+
+oc run curl-jmx \
+  -n vm-lab \
+  --image=curlimages/curl \
+  --restart=Never \
+  --rm -it \
+  -- curl -s http://app01-jmx:9404/metrics \
+  | grep -Ei 'heap|memory|garbage|thread|request|tomcat' \
+  | head -80
+
+============================
+setup the monitor
+
+Tomcat Requests/sec
+Time Series panel:
+rate(
+  Catalina_GlobalRequestProcessor_requestCount{
+    namespace="vm-lab",
+    service="app01-jmx"
+  }[5m]
+)
+
+Legend:
+Requests/sec
+
+Tomcat Errors/sec
+rate(
+  Catalina_GlobalRequestProcessor_errorCount{
+    namespace="vm-lab",
+    service="app01-jmx"
+  }[5m]
+)
+
+Legend:
+Errors/sec
+
+Average request processing time
+Because processingTime is cumulative milliseconds and requestCount is cumulative requests:
+rate(
+  Catalina_GlobalRequestProcessor_processingTime{
+    namespace="vm-lab",
+    service="app01-jmx"
+  }[5m]
+)
+/
+rate(
+  Catalina_GlobalRequestProcessor_requestCount{
+    namespace="vm-lab",
+    service="app01-jmx"
+  }[5m]
+)
+
+Set unit:
+milliseconds
+
+Maximum request processing time
+Catalina_GlobalRequestProcessor_maxTime{
+  namespace="vm-lab",
+  service="app01-jmx"
+}
+
+Network traffic handled by Tomcat
+Received:
+rate(
+  Catalina_GlobalRequestProcessor_bytesReceived{
+    namespace="vm-lab",
+    service="app01-jmx"
+  }[5m]
+)
+
+Sent:
+rate(
+  Catalina_GlobalRequestProcessor_bytesSent{
+    namespace="vm-lab",
+    service="app01-jmx"
+  }[5m]
+)
+
+Put both in one panel and use Bytes/sec.
+
+============================
+
+SQL SERVER
+
+[ Batch Requests/sec       ] [ User Connections          ]
+[ LegacyOrders Tx/sec      ] [ Active Transactions       ]
+[ Write Transactions/sec   ] [ Longest Transaction Age   ]
+
+SQL HEALTH / CONTENTION
+
+[ Blocked Processes        ] [ Deadlocks                 ]
+[ Lock Waits               ] [ Log Used %                ]
+
+sql more things to add
+
+Add these under the SQL group.
+SQL Batch Requests/sec — this is the best “how much SQL work is being processed” panel:
+rate(
+  windows_mssql_sqlstats_batch_requests{
+    namespace="vm-lab",
+    service="db01-metrics"
+  }[5m]
+)
+
+This metric represents SQL batch activity from the SQL Server collector. GitHub
+LegacyOrders Transactions/sec:
+rate(
+  windows_mssql_databases_transactions{
+    namespace="vm-lab",
+    service="db01-metrics",
+    database="LegacyOrders"
+  }[5m]
+)
+
+The collector exposes per-database transaction counters, so this one should move when your Tomcat app creates orders. GitHub
+LegacyOrders Write Transactions/sec:
+rate(
+  windows_mssql_databases_write_transactions{
+    namespace="vm-lab",
+    service="db01-metrics",
+    database="LegacyOrders"
+  }[5m]
+)
+
+Current SQL user connections:
+windows_mssql_genstats_user_connections{
+  namespace="vm-lab",
+  service="db01-metrics"
+}
+
+That gives you a live gauge of connected SQL users. GitHub
+Current active transactions:
+windows_mssql_transactions_active{
+  namespace="vm-lab",
+  service="db01-metrics"
+}
+
+And a very useful one for your “hung transaction” requirement:
+windows_mssql_transactions_longest_transaction_running_seconds{
+  namespace="vm-lab",
+  service="db01-metrics"
+}
+
+That shows the age in seconds of the longest currently running transaction, which is much more informative than a deadlock chart alone.
+
+=============================
+Tomcat Heap
+
+For Tomcat heap, let's make your JMX exporter produce clean metric names instead of relying on the current generic rules: - pattern: ".*" setup.
+On APP01, replace:
+C:\Monitoring\jmx_exporter\config.yaml
+
+with:
+rules:
+
+  - pattern: 'java.lang<type=Memory><HeapMemoryUsage>used: (.*)'
+    name: jvm_heap_memory_used_bytes
+    value: '$1'
+    type: GAUGE
+
+  - pattern: 'java.lang<type=Memory><HeapMemoryUsage>max: (.*)'
+    name: jvm_heap_memory_max_bytes
+    value: '$1'
+    type: GAUGE
+
+  - pattern: 'java.lang<type=Memory><HeapMemoryUsage>committed: (.*)'
+    name: jvm_heap_memory_committed_bytes
+    value: '$1'
+    type: GAUGE
+
+  - pattern: ".*"
+
+JMX Exporter specifically supports extracting the HeapMemoryUsage composite values this way and giving them explicit Prometheus metric names. Prometheus
+Restart Tomcat:
+Restart-Service Tomcat11
+
+Then verify:
+Invoke-WebRequest http://localhost:9404/metrics -UseBasicParsing |
+Select-String "jvm_heap"
+
+You want:
+jvm_heap_memory_used_bytes
+jvm_heap_memory_max_bytes
+jvm_heap_memory_committed_bytes
+
+Then create these Perses panels.
+Heap Used MB
+jvm_heap_memory_used_bytes{
+  namespace="vm-lab",
+  service="app01-jmx"
+} / 1024 / 1024
+
+Heap Max MB
+jvm_heap_memory_max_bytes{
+  namespace="vm-lab",
+  service="app01-jmx"
+} / 1024 / 1024
+
+Heap Usage % — this is probably the most useful:
+100 *
+jvm_heap_memory_used_bytes{
+  namespace="vm-lab",
+  service="app01-jmx"
+}
+/
+jvm_heap_memory_max_bytes{
+  namespace="vm-lab",
+  service="app01-jmx"
+}
+
+Set:
+Unit: Percent
+Min: 0
+Max: 100
+
+And another useful panel:
+Heap Used vs Committed
+Query A:
+jvm_heap_memory_used_bytes{
+  namespace="vm-lab",
+  service="app01-jmx"
+} / 1024 / 1024
+
+Legend:
+Used
+
+Query B:
+jvm_heap_memory_committed_bytes{
+  namespace="vm-lab",
+  service="app01-jmx"
+} / 1024 / 1024
+
+Legend:
+Committed
+
+So your Tomcat section becomes:
+TOMCAT / JVM
+
+[ Heap Used %          ] [ Heap Used / Max MB ]
+[ Requests/sec         ] [ Errors/sec         ]
+[ Avg Response Time    ] [ Max Response Time  ]
+[ Network RX / TX      ] [ JVM Threads        ]
+[ GC Count             ] [ GC Pause Time      ]
+
+=================
+
+For GC & Threads
+
+Update the file
+
+C:\Monitoring\jmx_exporter\config.yaml
+
+  # JVM Threads
+  - pattern: 'java.lang<type=Threading><>ThreadCount: (.*)'
+    name: jvm_threads_live
+    value: '$1'
+    type: GAUGE
+
+  - pattern: 'java.lang<type=Threading><>PeakThreadCount: (.*)'
+    name: jvm_threads_peak
+    value: '$1'
+    type: GAUGE
+
+  # Garbage Collection count
+  - pattern: 'java.lang<type=GarbageCollector, name=(.*)><>CollectionCount: (.*)'
+    name: jvm_gc_collection_count_total
+    labels:
+      gc: '$1'
+    value: '$2'
+    type: COUNTER
+
+  # Garbage Collection time
+  - pattern: 'java.lang<type=GarbageCollector, name=(.*)><>CollectionTime: (.*)'
+    name: jvm_gc_collection_time_milliseconds_total
+    labels:
+      gc: '$1'
+    value: '$2'
+    type: COUNTER
+
+=========================
+
