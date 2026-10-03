@@ -74,3 +74,15 @@ netsh interface ipv4 set subinterface "Ethernet" mtu=1400 store=persistent
 ipconfig /flushdns
 
 
+===========
+
+iso budiling
+
+virtctl image-upload dv esxi-8u3e-iso \
+  -n vm-lab \
+  --image-path=/home/user/Downloads/VMware-VMvisor-Installer-8.0U3e-24677879.x86_64.iso \
+  --size=2Gi \
+  --storage-class=hpp-local \
+  --access-mode=ReadWriteOnce \
+  --force-bind \
+  --insecure
